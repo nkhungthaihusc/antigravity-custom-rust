@@ -1,0 +1,8 @@
+node_modules/
+release/
+release-out/
+target/
+work/
+*.log
+*.tmp
+.env

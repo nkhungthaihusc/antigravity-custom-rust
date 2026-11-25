@@ -1,0 +1,7 @@
+/* Plavsky native welcome; controls remain real accessible DOM elements. */
+.plavsky-motion{display:none!important}
+.rg-system #scene{display:none!important}
+#flow-banner{display:none!important}
+.rg-system #rg-device{display:none!important}
+.rg-device{display:none!important}
+.plavsky-paused *{animation-play-state:paused!important}

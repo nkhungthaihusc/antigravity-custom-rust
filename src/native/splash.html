@@ -1,0 +1,91 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self';script-src 'self';style-src 'self' 'unsafe-inline';img-src 'self' agc-asset: data:;media-src 'self' agc-asset:;connect-src 'none';object-src 'none';base-uri 'none';form-action 'none'"><title>Antigravity · Custom startup</title><link rel="stylesheet" href="splash.css"></head><body>
+<link rel="stylesheet" href="renderer/rg.css"><link rel="stylesheet" href="renderer/plavsky.css">
+<canvas id="scene" hidden></canvas><img id="backdrop-image" alt="" hidden><video id="backdrop-video" src="white-gundam.mp4" autoplay muted loop playsinline></video><div class="shade"></div>
+<header><div><strong>ANTIGRAVITY</strong><small>Plavsky System</small><span id="preset-label">Custom startup</span><p id="native-preview-label" hidden>Xem trước splash · Esc để quay lại</p></div></header>
+<main>
+ <section id="consent"><p class="eyebrow">Access permission required</p><h1>Yêu cầu quyền truy cập</h1><p class="description">Không gian của bạn. Sẵn sàng cho một phiên mới.</p><button id="begin" class="primary">Bắt đầu <span>Enter ↵</span></button></section>
+ <section id="identity" hidden><p class="eyebrow">Identity verification</p><h1 id="identity-title">Xác minh danh tính</h1><p class="description" id="identity-description">Nhập mật khẩu để tiếp tục vào Antigravity.</p><form id="auth-form"><label for="password">Mật khẩu</label><input id="password" type="password" autocomplete="current-password" maxlength="256" required><div id="confirmation-wrap" hidden><label for="confirmation">Nhập lại mật khẩu</label><input id="confirmation" type="password" autocomplete="new-password" maxlength="256"></div><p id="auth-error" role="alert"></p><button id="authenticate" class="primary" type="submit">Xác nhận danh tính</button></form></section>
+ <section id="boot" hidden>
+  <p class="eyebrow"><span class="status-dot"></span>Access granted · System initialization</p>
+  <div class="orbit-wrap">
+   <div class="orbit" id="orbit">
+    <div class="orbit-inner"></div>
+    <div class="orbit-core"></div>
+   </div>
+   <div class="orbit-bracket b-left"></div>
+   <div class="orbit-bracket b-right"></div>
+  </div>
+  <h1 id="boot-title">Link Start</h1>
+  <div class="boot-progress-line"><div class="boot-progress-fill"></div></div>
+  <p class="description" id="boot-status">Đang chuẩn bị giao diện Antigravity…</p>
+  <button id="skip" class="skip-btn" type="button" hidden>Bỏ qua hiệu ứng <span>Skip ⏭</span></button>
+ </section>
+ <section id="welcome" hidden>
+  <p class="eyebrow">Session ready</p>
+  <h1 id="welcome-title">Chào mừng trở lại</h1>
+  <div id="rg-ready-banner" class="rg-banner" hidden><small id="rg-banner-system"></small><strong id="rg-banner-text">SYSTEM READY</strong></div>
+  <div id="quota-telemetry" class="quota-telemetry">
+   <div class="quota-telemetry-header">
+    <span class="q-pulse-dot"></span>
+    <span class="q-title">AI ENGINE QUOTA TELEMETRY</span>
+    <span class="q-badge">LIVE SYNC</span>
+   </div>
+   <div class="quota-grid">
+    <div class="quota-card">
+     <div class="quota-header">
+      <span class="quota-name"><i class="q-icon">✦</i> ANTIGRAVITY (GEMINI)</span>
+     </div>
+     <div class="quota-metric">
+      <div class="quota-metric-row"><span>5 giờ</span><b id="splash-q-gemini-5h">99%</b></div>
+      <div class="quota-progress-track">
+       <div class="quota-progress-bar" id="splash-q-gemini-5h-bar" style="width: 99%;"></div>
+      </div>
+     </div>
+     <div class="quota-metric">
+      <div class="quota-metric-row"><span>Tuần</span><b id="splash-q-gemini-week">100%</b></div>
+      <div class="quota-progress-track">
+       <div class="quota-progress-bar week" id="splash-q-gemini-week-bar" style="width: 100%;"></div>
+      </div>
+     </div>
+    </div>
+    <div class="quota-card">
+     <div class="quota-header">
+      <span class="quota-name"><i class="q-icon">◈</i> CODEX (CHATGPT)</span>
+     </div>
+     <div class="quota-metric">
+      <div class="quota-metric-row"><span>5 giờ</span><b id="splash-q-codex-5h">100%</b></div>
+      <div class="quota-progress-track">
+       <div class="quota-progress-bar cyan" id="splash-q-codex-5h-bar" style="width: 100%;"></div>
+      </div>
+     </div>
+     <div class="quota-metric">
+      <div class="quota-metric-row"><span>Tuần</span><b id="splash-q-codex-week">100%</b></div>
+      <div class="quota-progress-track">
+       <div class="quota-progress-bar cyan week" id="splash-q-codex-week-bar" style="width: 100%;"></div>
+      </div>
+     </div>
+    </div>
+   </div>
+  </div>
+  <button id="enter-system" class="primary" type="button">Bắt đầu <span>Enter ↵</span></button>
+ </section>
+</main><div id="transition-overlay" class="transition-overlay" hidden>
+ <div class="transition-vignette"></div>
+ <div class="transition-grid"></div>
+ <div class="transition-flare"></div>
+ <div class="transition-core">
+  <div class="core-reticle">
+   <div class="reticle-ring"></div>
+   <div class="reticle-pulse"></div>
+   <div class="reticle-brackets"><span class="b-tl"></span><span class="b-tr"></span><span class="b-bl"></span><span class="b-br"></span></div>
+  </div>
+  <div class="core-brand">
+   <span class="brand-sub">NEURAL LINK ENGAGED</span>
+   <h2 class="brand-title">ANTIGRAVITY</h2>
+   <div class="brand-bar"><div class="brand-bar-fill"></div></div>
+   <span class="brand-status" id="transition-status">TRANSITIONING TO WORKSPACE</span>
+  </div>
+ </div>
+</div><div id="flow-banner" role="status">SẴN SÀNG BẮT ĐẦU</div><button id="sound-toggle" type="button" aria-pressed="false">Tắt âm thanh</button>
+<footer><span id="step">01 / 04 · Authorization</span><div class="progress"><i id="progress"></i></div><span id="system-status" role="status">Đang chờ xác nhận</span></footer>
+<p id="audio-status" role="status" hidden></p><span id="rg-auth-status" hidden></span><button id="startup-preview" type="button" hidden>Nghe thử âm khởi động</button><audio id="cue-audio" preload="metadata"></audio><audio id="cinematic-audio" preload="metadata"></audio><audio id="startup-music" loop></audio><script type="module" src="splash.mjs"></script></body></html>
