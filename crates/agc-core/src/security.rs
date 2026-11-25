@@ -2,8 +2,9 @@ use rand::RngCore;
 use scrypt::{scrypt, Params};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 use subtle::ConstantTimeEq;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,10 +31,61 @@ fn scrypt_params() -> Params {
     Params::new(15, 8, 1, 64).expect("Valid scrypt parameters")
 }
 
-pub fn hash_password(password: &str) -> Result<SecurityRecord, String> {
-    if password.len() < 8 || password.len() > 256 {
+fn validate_password(password: &str) -> Result<(), String> {
+    if !(8..=256).contains(&password.encode_utf16().count()) {
         return Err("Mật khẩu cần từ 8 đến 256 ký tự.".into());
     }
+    Ok(())
+}
+
+fn valid_record(record: &SecurityRecord) -> bool {
+    record.algorithm == "scrypt-v1"
+        && record.salt.len() == 32
+        && hex::decode(&record.salt).is_ok()
+        && record.hash.len() == 128
+        && hex::decode(&record.hash).is_ok()
+        && record.failures <= 20
+}
+
+// Shared with Node's Security.exclusive, so a verification cannot overwrite a
+// password changed by the other process while scrypt was running.
+struct CredentialLock(PathBuf);
+impl CredentialLock {
+    fn acquire(file: &Path) -> Result<Self, String> {
+        let lock = file.with_file_name("security.json.lock");
+        fs::create_dir_all(file.parent().ok_or("Đường dẫn dữ liệu không hợp lệ.")?)
+            .map_err(|e| e.to_string())?;
+        let start = Instant::now();
+        loop {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock)
+            {
+                Ok(_) => return Ok(Self(lock)),
+                Err(error)
+                    if error.kind() == ErrorKind::AlreadyExists
+                        && start.elapsed() < Duration::from_secs(10) =>
+                {
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "Không thể khóa dữ liệu mật khẩu dùng chung: {error}"
+                    ))
+                }
+            }
+        }
+    }
+}
+impl Drop for CredentialLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+pub fn hash_password(password: &str) -> Result<SecurityRecord, String> {
+    validate_password(password)?;
 
     let mut salt_bytes = [0u8; 16];
     rand::thread_rng().fill_bytes(&mut salt_bytes);
@@ -41,8 +93,14 @@ pub fn hash_password(password: &str) -> Result<SecurityRecord, String> {
 
     let mut output = [0u8; 64];
     let params = scrypt_params();
-    scrypt(password.as_bytes(), &salt_bytes, &params, &mut output)
-        .map_err(|e| format!("Scrypt error: {:?}", e))?;
+    // Node has always passed the stored hex string to crypto.scrypt as UTF-8.
+    scrypt(
+        password.as_bytes(),
+        salt_hex.as_bytes(),
+        &params,
+        &mut output,
+    )
+    .map_err(|e| format!("Scrypt error: {:?}", e))?;
 
     Ok(SecurityRecord {
         algorithm: "scrypt-v1".into(),
@@ -54,7 +112,7 @@ pub fn hash_password(password: &str) -> Result<SecurityRecord, String> {
 }
 
 pub fn verify_password(password: &str, record: &SecurityRecord) -> bool {
-    if password.len() > 256 || record.algorithm != "scrypt-v1" {
+    if password.encode_utf16().count() > 256 || !valid_record(record) {
         return false;
     }
     let salt_bytes = match hex::decode(&record.salt) {
@@ -68,11 +126,24 @@ pub fn verify_password(password: &str, record: &SecurityRecord) -> bool {
 
     let mut output = [0u8; 64];
     let params = scrypt_params();
-    if scrypt(password.as_bytes(), &salt_bytes, &params, &mut output).is_err() {
+    if scrypt(
+        password.as_bytes(),
+        record.salt.as_bytes(),
+        &params,
+        &mut output,
+    )
+    .is_err()
+    {
         return false;
     }
 
-    output.ct_eq(&expected_hash).into()
+    if bool::from(output.ct_eq(&expected_hash)) {
+        return true;
+    }
+    // v0.5.0 Rust used raw salt bytes with the same algorithm label. Preserve
+    // those existing passwords; new records always use the Node-compatible form.
+    scrypt(password.as_bytes(), &salt_bytes, &params, &mut output).is_ok()
+        && bool::from(output.ct_eq(&expected_hash))
 }
 
 pub struct SecurityManager {
@@ -88,14 +159,37 @@ impl SecurityManager {
         }
     }
 
-    pub fn load_record(&self) -> Option<SecurityRecord> {
-        let content = fs::read_to_string(&self.file_path).ok()?;
-        serde_json::from_str(&content).ok()
+    pub fn load_record(&self) -> Result<Option<SecurityRecord>, String> {
+        let content = match fs::read_to_string(&self.file_path) {
+            Ok(value) => value,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(format!("Không đọc được dữ liệu mật khẩu: {error}")),
+        };
+        let record: SecurityRecord = serde_json::from_str(&content)
+            .map_err(|_| "Dữ liệu mật khẩu hỏng; không được tạo đè mật khẩu mới.".to_string())?;
+        if !valid_record(&record) {
+            return Err("Dữ liệu mật khẩu không hợp lệ.".into());
+        }
+        Ok(Some(record))
     }
 
     pub fn save_record(&self, record: &SecurityRecord) -> Result<(), String> {
         let json = serde_json::to_string_pretty(record).map_err(|e| e.to_string())?;
-        fs::write(&self.file_path, json).map_err(|e| e.to_string())
+        let temp = self
+            .file_path
+            .with_file_name(format!("security.json.{}.tmp", rand::random::<u64>()));
+        let result = (|| {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temp)?;
+            file.write_all(json.as_bytes())?;
+            file.sync_all()?;
+            drop(file);
+            fs::rename(&temp, &self.file_path)
+        })();
+        let _ = fs::remove_file(&temp);
+        result.map_err(|e: std::io::Error| e.to_string())
     }
 
     pub fn is_unlocked(&self) -> bool {
@@ -106,8 +200,8 @@ impl SecurityManager {
         self.session_until > now
     }
 
-    pub fn status(&self) -> SecurityStatus {
-        let rec = self.load_record();
+    pub fn status(&self) -> Result<SecurityStatus, String> {
+        let rec = self.load_record()?;
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
@@ -117,15 +211,28 @@ impl SecurityManager {
             .map(|r| r.locked_until.saturating_sub(now))
             .unwrap_or(0);
 
-        SecurityStatus {
+        Ok(SecurityStatus {
             configured: rec.is_some(),
             unlocked: self.is_unlocked(),
             retry_after_ms: retry_after,
+        })
+    }
+
+    pub fn require(&mut self) -> Result<(), String> {
+        if !self.is_unlocked() {
+            return Err("Phiên đã khóa. Hãy đăng nhập lại.".into());
         }
+        self.session_until = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+            + 30 * 60 * 1000;
+        Ok(())
     }
 
     pub fn setup(&mut self, password: &str) -> Result<SecurityStatus, String> {
-        if self.load_record().is_some() {
+        let _lock = CredentialLock::acquire(&self.file_path)?;
+        if self.load_record()?.is_some() {
             return Err("Mật khẩu đã được thiết lập.".into());
         }
         let record = hash_password(password)?;
@@ -136,11 +243,12 @@ impl SecurityManager {
             .unwrap_or_default()
             .as_millis() as u64;
         self.session_until = now + 30 * 60 * 1000;
-        Ok(self.status())
+        self.status()
     }
 
     pub fn verify(&mut self, password: &str) -> Result<SecurityStatus, String> {
-        let mut rec = self.load_record().ok_or("Hãy thiết lập mật khẩu trước.")?;
+        let _lock = CredentialLock::acquire(&self.file_path)?;
+        let mut rec = self.load_record()?.ok_or("Hãy thiết lập mật khẩu trước.")?;
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
@@ -156,7 +264,7 @@ impl SecurityManager {
             rec.locked_until = 0;
             self.save_record(&rec)?;
             self.session_until = now + 30 * 60 * 1000;
-            Ok(self.status())
+            self.status()
         } else {
             rec.failures = (rec.failures + 1).min(20);
             if rec.failures >= 5 {
@@ -177,10 +285,10 @@ impl SecurityManager {
     }
 
     pub fn change_password(&mut self, current: &str, next: &str) -> Result<bool, String> {
-        if !self.is_unlocked() {
-            return Err("Phiên đã khóa. Hãy đăng nhập lại.".into());
-        }
-        let rec = self.load_record().ok_or("Chưa thiết lập mật khẩu.")?;
+        self.require()?;
+        let _lock = CredentialLock::acquire(&self.file_path)?;
+        validate_password(next)?;
+        let rec = self.load_record()?.ok_or("Chưa thiết lập mật khẩu.")?;
         if !verify_password(current, &rec) {
             return Err("Mật khẩu hiện tại chưa đúng.".into());
         }

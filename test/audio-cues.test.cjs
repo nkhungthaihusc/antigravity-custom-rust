@@ -27,8 +27,11 @@ test('cue settings whitelist event IDs, preserve old track and exclude personal 
  const bundle=exportPreset(c);assert.equal(JSON.stringify(bundle).includes(id),false);const next=importPreset(c,bundle,'custom-cues');assert.equal(next.rg.cueAudioIds.begin,id);assert.equal(next.rg.startupAudioId,id);
  assert.equal(normalizeConfig({}).rg.audioMode,'track');
 });
-test('cue folder import validates every file before copying and generates portable IDs',async()=>{
- const work=await fs.mkdtemp(path.join(path.resolve(__dirname,'../work'),'cue-import-')),folder=path.join(work,'input'),assets=path.join(work,'assets');await fs.mkdir(folder);
+test('cue folder import validates every file before copying and generates portable IDs',async t=>{
+ const parent=path.resolve(__dirname,'../work');await fs.mkdir(parent,{recursive:true});
+ const work=await fs.mkdtemp(path.join(parent,'cue-import-')),folder=path.join(work,'input'),assets=path.join(work,'assets');
+ t.after(()=>{if(path.dirname(path.resolve(work))!==parent)throw new Error('Unsafe test cleanup');return fs.rm(work,{recursive:true,force:true});});
+ await fs.mkdir(folder);
  const entries=Object.values(CUE_FILES);for(const name of entries.slice(1))await fs.writeFile(path.join(folder,name),Buffer.from('ID3test'));
  await assert.rejects(importCueFolder(folder,assets,normalizeConfig()));await assert.rejects(fs.stat(assets));
  await fs.writeFile(path.join(folder,entries[0]),Buffer.from('not audio'));await assert.rejects(importCueFolder(folder,assets,normalizeConfig()),/MP3/);

@@ -15,6 +15,7 @@ const SUPPORTED_VERSIONS=[
 const SUPPORTED=SUPPORTED_VERSIONS[0];
 const findSupportedByAsarHash=h=>SUPPORTED_VERSIONS.find(v=>v.asarHash===h);
 const MOD_VERSION='0.4.2';
+const RUNTIME_FILES=[['native/overlay.cjs','overlay.cjs'],['native/preload.cjs','preload.cjs'],['native/splash.html','splash.html'],['native/splash.css','splash.css'],['native/splash.mjs','splash.mjs'],['native/settings-preload.cjs','settings-preload.cjs'],['native/settings.cjs','settings.cjs'],['native/music.cjs','music.cjs'],['native/music-preload.cjs','music-preload.cjs'],['native/music.html','music.html'],['native/music.js','music.js'],['native/white-gundam.png','white-gundam.png'],['native/white-gundam.mp4','white-gundam.mp4'],['renderer','renderer'],['core','core'],['integration/runtime.js','runtime.js'],['../assets/audio','audio']];
 const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
 function inside(root,target){const rel=path.relative(path.resolve(root),path.resolve(target));if(!rel||rel.startsWith('..')||path.isAbsolute(rel))throw new Error('Đường dẫn mod không nằm trong thư mục dự kiến.');return target;}
 function readAsar(buffer){const jsonLength=buffer.readUInt32LE(12),header=JSON.parse(buffer.subarray(16,16+jsonLength).toString('utf8'));return {header,jsonLength,dataOffset:8+buffer.readUInt32LE(4)};}
@@ -37,19 +38,28 @@ async function inspect(executable){
  const bytes=await fs.readFile(asarPath),currentHash=hash(bytes);
  const matchedSpec=findSupportedByAsarHash(currentHash)||(manifest?.product==='antigravity-custom-native'?findSupportedByAsarHash(manifest.originalHash):null);
  const installed=Boolean(manifest?.product==='antigravity-custom-native'&&manifest.patchedHash===currentHash&&findSupportedByAsarHash(manifest.originalHash));
- return {executable:file,resources,asarPath,mod,manifest,currentHash,installed,supported:Boolean(findSupportedByAsarHash(currentHash))||installed,appVersion:matchedSpec?.version||SUPPORTED.version};
+ const runtime=installed&&typeof manifest.runtimeRelative==='string'?inside(mod,path.join(mod,manifest.runtimeRelative)):null;
+ const updateAvailable=installed&&(!runtime||await runtimeDigest(path.resolve(__dirname,'..'))!==await runtimeDigest(runtime,true));
+ return {executable:file,resources,asarPath,mod,manifest,currentHash,installed,updateAvailable,supported:Boolean(findSupportedByAsarHash(currentHash))||installed,appVersion:matchedSpec?.version||null};
+}
+async function runtimeDigest(root,installed=false){
+ const digest=crypto.createHash('sha256');
+ async function visit(file,label){const stat=await sourceFs.stat(file);if(stat.isDirectory()){for(const name of(await sourceFs.readdir(file)).sort())await visit(path.join(file,name),`${label}/${name}`);}else{digest.update(label);digest.update(await sourceFs.readFile(file));}}
+ try{for(const[source,dest]of RUNTIME_FILES)await visit(path.join(root,installed?dest:source),dest);return digest.digest('hex');}catch(error){if(error.code==='ENOENT')return '';throw error;}
 }
 async function running(){if(process.platform!=='win32')return false;const {stdout}=await run('powershell.exe',['-NoProfile','-NonInteractive','-WindowStyle','Hidden','-Command',"@(Get-Process -Name Antigravity -ErrorAction SilentlyContinue).Count"],{windowsHide:true,timeout:6000});return Number(stdout.trim())>0;}
 async function copyOwnTree(source,destination){const stat=await sourceFs.stat(source);if(stat.isDirectory()){await fs.mkdir(destination,{recursive:true});for(const name of await sourceFs.readdir(source))await copyOwnTree(path.join(source,name),path.join(destination,name));}else{await fs.mkdir(path.dirname(destination),{recursive:true});await fs.writeFile(destination,await sourceFs.readFile(source));}}
 async function install(executable,{dataDirectory,sourceRoot=path.resolve(__dirname,'..'),allowTestCopy=false,force=false}={}){
  const info=await inspect(executable);
+ if(allowTestCopy)inside(path.join(path.resolve(__dirname,'../..'),'work'),info.executable);
+ if(info.installed&&dataDirectory&&path.resolve(dataDirectory).toLowerCase()!==path.resolve(info.manifest.dataDirectory).toLowerCase())throw new Error('Không được đổi thư mục dữ liệu của bản native đã cài; hãy dùng thư mục dùng chung hiện tại.');
  if(info.installed&&info.manifest.modVersion===MOD_VERSION&&!force){
   if(!allowTestCopy&&await running())throw new Error('Hãy đóng Antigravity App hoàn toàn trước khi cài tích hợp.');
   const mod=inside(info.resources,info.mod),runtime=inside(mod,path.join(mod,'releases',MOD_VERSION));await fs.mkdir(runtime,{recursive:true});
-  for(const [source,dest] of [['native/overlay.cjs','overlay.cjs'],['native/preload.cjs','preload.cjs'],['native/splash.html','splash.html'],['native/splash.css','splash.css'],['native/splash.mjs','splash.mjs'],['native/settings-preload.cjs','settings-preload.cjs'],['native/settings.cjs','settings.cjs'],['native/music.cjs','music.cjs'],['native/music-preload.cjs','music-preload.cjs'],['native/music.html','music.html'],['native/music.js','music.js'],['native/white-gundam.png','white-gundam.png'],['native/white-gundam.mp4','white-gundam.mp4'],['renderer','renderer'],['core','core'],['integration/runtime.js','runtime.js'],['../assets/audio','audio']]){
+  for(const [source,dest] of RUNTIME_FILES){
     const destination=inside(runtime,path.join(runtime,dest));await copyOwnTree(path.join(sourceRoot,source),destination);
   }
-  return info;
+  return inspect(executable);
  }
  if(!info.supported)throw new Error('Chỉ hỗ trợ các bản Antigravity App (2.34.0 / 2.35.1) đã được kiểm chứng.');
  if(!allowTestCopy&&await running())throw new Error('Hãy đóng Antigravity App hoàn toàn trước khi cài tích hợp.');
@@ -64,7 +74,7 @@ async function install(executable,{dataDirectory,sourceRoot=path.resolve(__dirna
  try{await fs.writeFile(backup,original,{flag:'wx'});}catch(e){if(e.code!=='EEXIST')throw e;if(hash(await fs.readFile(backup))!==spec.asarHash)throw new Error('Bản sao lưu không đúng checksum.');}
  const mod=inside(info.resources,info.mod),runtime=inside(mod,path.join(mod,'releases',MOD_VERSION));await fs.mkdir(runtime,{recursive:true});
  // Only community-owned code/assets are installed here. No Google code is redistributed.
- for(const [source,dest] of [['native/overlay.cjs','overlay.cjs'],['native/preload.cjs','preload.cjs'],['native/splash.html','splash.html'],['native/splash.css','splash.css'],['native/splash.mjs','splash.mjs'],['native/settings-preload.cjs','settings-preload.cjs'],['native/settings.cjs','settings.cjs'],['native/music.cjs','music.cjs'],['native/music-preload.cjs','music-preload.cjs'],['native/music.html','music.html'],['native/music.js','music.js'],['native/white-gundam.png','white-gundam.png'],['native/white-gundam.mp4','white-gundam.mp4'],['renderer','renderer'],['core','core'],['integration/runtime.js','runtime.js'],['../assets/audio','audio']]){
+ for(const [source,dest] of RUNTIME_FILES){
    const destination=inside(runtime,path.join(runtime,dest));await copyOwnTree(path.join(sourceRoot,source),destination);
  }
  const manifest={product:'antigravity-custom-native',modVersion:MOD_VERSION,runtimeRelative:`releases/${MOD_VERSION}`,appVersion:spec.version,originalHash:spec.asarHash,patchedHash:hash(patched),backup,dataDirectory:path.resolve(dataDirectory||info.manifest?.dataDirectory||path.join(process.env.APPDATA,'antigravity-custom')),installedAt:new Date().toISOString()};
@@ -82,4 +92,4 @@ async function uninstall(executable,{allowTestCopy=false}={}){
  const staged=inside(info.resources,`${info.asarPath}.agc-restore`);await fs.writeFile(staged,original);await fs.rename(staged,info.asarPath);
  const mod=inside(info.resources,info.mod);await fs.rm(mod,{recursive:true,force:true});return inspect(executable);
 }
-module.exports={SUPPORTED,MOD_VERSION,hash,readAsar,getEntry,patchAsar,inspect,install,uninstall};
+module.exports={SUPPORTED,MOD_VERSION,hash,readAsar,getEntry,patchAsar,inspect,install,uninstall,runtimeDigest};

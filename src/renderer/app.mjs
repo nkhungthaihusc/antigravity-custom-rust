@@ -16,6 +16,7 @@ const tauriApi = window.__TAURI__?.core ? {
   nativeUninstall: () => window.__TAURI__.core.invoke('native_uninstall'),
   detect: () => window.__TAURI__.core.invoke('bootstrap'),
   importMedia: async () => null,
+  readPreviewAudio: () => window.__TAURI__.core.invoke('preview_audio'),
   importCues: async () => null,
   exportPreset: async () => false,
   importPreset: async () => null,
@@ -27,9 +28,10 @@ const api = window.custom || tauriApi;
 let state, config, initialized = false, configured = false, filter = 'all', busy = false, saveTimer, revision = 0, savedRevision = 0, saving = Promise.resolve(), skipResolve;
 const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const preset = () => config.presets.find(p => p.id === config.selectedPreset) || config.presets[0];
+const selectedAudioId=()=>config.splash.themeAudioIds?.[preset().family]||(preset().family!=='sao'?config.splash.audioId:'');
 const motion = () => !!config && preset().motion && !config.accessibility.reducedMotion && !prefersReduced;
-const titles = { sao: 'White Gundam · Online', gundam: 'White Gundam · Online', focus: 'Stealth Mode · Online' };
-let toastTimer,voicePreview;
+const titles = { sao: 'Link Start', gundam: 'White Gundam · Online', focus: 'Stealth Mode · Online' };
+let toastTimer,voicePreview,saoAudioPreview;
 const nativeHost=()=>state?.hostMode?.startsWith('native');
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
 function fail(error) { toast(error.message || String(error)); if (error.message?.includes('Phiên đã khóa')) void lock(); }
@@ -63,6 +65,7 @@ function renderGallery() {
   for (const p of visible) {
     const button = document.createElement('button'); button.className = `theme-card${p.id === config.selectedPreset ? ' selected' : ''}`; button.dataset.preset = p.id; button.setAttribute('aria-label', p.name); button.setAttribute('aria-pressed', p.id === config.selectedPreset ? 'true' : 'false');
     const art = document.createElement('div'); art.className = 'theme-art'; const canvas = document.createElement('canvas'); art.append(canvas);
+    button.dataset.family = p.family; button.style.setProperty('--card-accent',p.accent);
     const check = document.createElement('span'); check.className = 'theme-check'; check.innerHTML = '<svg class="icon"><use href="#i-check"/></svg>';
     const copy = document.createElement('div'); copy.className = 'theme-card-copy'; const name = document.createElement('span'); name.className = 'theme-card-title'; name.textContent = p.name;
     const mode = document.createElement('span'); mode.className = 'theme-card-mode'; mode.textContent = `${p.mode === 'dark' ? 'Giao diện tối' : 'Giao diện sáng'} · ${p.motion ? 'Có chuyển động' : 'Tĩnh'}`;
@@ -73,7 +76,13 @@ function renderGallery() {
 }
 function renderControls() {
   const p = preset(); document.documentElement.style.setProperty('--accent', p.accent);
-  document.body.classList.toggle('reduced-motion', config.accessibility.reducedMotion);
+  document.body.dataset.themeFamily = p.family;
+  $('.sao-setup').hidden=p.family!=='sao';
+  if(p.family!=='sao')saoAudioPreview?.pause();
+  document.body.style.setProperty('--sao-bg',p.background);
+  document.body.style.setProperty('--sao-text',p.foreground);
+  document.body.classList.toggle('reduced-motion', !motion());
+  $('.mini-label').textContent=p.family==='sao'?'SWORD ART ONLINE · FULLDIVE INTERFACE':'WHITE GUNDAM · NEURAL INTERFACE';
   $('#selected-name').textContent = p.name; $('#selected-description').textContent = p.description; $('#preview-greeting').textContent = titles[p.family];
   $('#accent-code').textContent = p.accent.toUpperCase(); setValue('#preset-accent', p.accent); setValue('#preset-motion', p.motion);
   setValue('#preset-name',p.name);
@@ -91,11 +100,11 @@ function renderControls() {
   $$('#rg-preview .rg-device,#rg-preview .rg-banner').forEach(element=>element.style.setProperty('--rg-cyan',rg.color || '#22d3ee'));
   $('#duration-value').textContent = `${(config.splash.durationMs/1000).toFixed(1)} giây`; $('#volume-value').textContent = `${config.splash.volume}%`; $('#opacity-value').textContent = `${config.wallpaper.opacity}%`; $('#blur-value').textContent = `${config.wallpaper.blur}px`;
   $('#splash-file').textContent = config.splash.mediaId ? `File riêng · ${config.splash.mediaId.split('.').at(-1).toUpperCase()}` : 'Đồ họa của chủ đề';
-  $('#audio-file').textContent = config.splash.audioId ? 'Đã chọn nhạc riêng' : 'Chưa chọn nhạc'; $('#wallpaper-file').textContent = config.wallpaper.mediaId ? 'Đã chọn ảnh riêng' : 'Màu theo chủ đề';
+  $('#audio-file').textContent = selectedAudioId() ? 'Đã chọn nhạc riêng' : p.family==='sao'?'Swordland · nhạc của theme':['gundam','focus'].includes(p.family)?'GUNDAM BUILD FIGHTERS · Yuki Hayashi':'Chưa chọn nhạc'; $('#wallpaper-file').textContent = config.wallpaper.mediaId ? 'Đã chọn ảnh riêng' : 'Màu theo chủ đề';
   const found = !!(config.launcher.executable || state.detectedPath); $('#target-dot').classList.toggle('ok', found); $('#target-status-text').textContent = found ? 'Đã tìm thấy bản cài' : 'Chọn file ở Launcher';
   $('#integration-dot').classList.toggle('ok', state.integration?.state === 'connected'); $('#integration-dot').classList.toggle('error', state.integration?.state === 'error'); $('#integration-message').textContent = state.integration?.message || 'Chưa kết nối.';
   if($('#native-message')){
-    $('#native-message').textContent=state.nativeStatus?.installed?'Đã thay splash gốc. Mở Antigravity trực tiếp để sử dụng.':'Chưa cài tích hợp native. Cài một lần để thay splash ngay trong Antigravity.';
+    $('#native-message').textContent=state.nativeStatus?.updateAvailable?'Tích hợp trong App đang cũ. Cập nhật để nhận theme, hình nền và âm thanh mới.':state.nativeStatus?.installed?'Đã thay splash gốc. Mở Antigravity trực tiếp để sử dụng.':state.nativeStatus?.error||'Chưa cài tích hợp native. Cài một lần để thay splash ngay trong Antigravity.';
     $('#native-install').disabled=(!!state.nativeStatus?.installed&&!state.nativeStatus.updateAvailable)||nativeHost();
     $('#native-install').textContent=state.nativeStatus?.updateAvailable?'Cập nhật tích hợp':'Cài tích hợp native';
     $('#native-uninstall').disabled=!state.nativeStatus?.installed||nativeHost();
@@ -118,7 +127,7 @@ function showGate() {
   $('#password').value = ''; $('#confirm-password').value = ''; $('#auth-error').textContent = ''; $('#show-password').checked = false;
   $('#password').type = 'password'; $('#confirm-password').type = 'password'; $('#password').focus();
 }
-async function lock() { await flushSave().catch(() => {}); await api.lock(); showGate(); }
+async function lock() { saoAudioPreview?.pause();await flushSave().catch(() => {}); await api.lock(); showGate(); }
 function chime(volume) {
   const context = new AudioContext(); const master = context.createGain(); master.gain.value = volume / 100 * .12; master.connect(context.destination);
   for (const [index,freq] of [523.25,783.99].entries()) { const tone = context.createOscillator(), gain = context.createGain(); tone.type='sine';tone.frequency.value=freq;gain.gain.setValueAtTime(0,context.currentTime);gain.gain.linearRampToValueAtTime(.4,context.currentTime+.03+index*.1);gain.gain.exponentialRampToValueAtTime(.001,context.currentTime+.6+index*.1);tone.connect(gain);gain.connect(master);tone.start(context.currentTime+index*.1);tone.stop(context.currentTime+.75); }
@@ -127,7 +136,7 @@ function chime(volume) {
 async function runSplash(preview = true) {
   if(preview&&nativeHost()&&api.previewNative){if(busy)return;busy=true;try{await flushSave();await api.previewNative();}catch(e){fail(e);}finally{busy=false;}return;}
   if (busy) return; busy = true; $('#launch-button').disabled = true; $('#preview-button').disabled = true;
-  let audio, timers = [], skipped = false;
+  let audio, audioObjectUrl, timers = [], skipped = false;
   try {
     await flushSave(); clearTimeout(toastTimer); $('#toast').hidden = true;
     const show = preview; // Actual startup belongs to Antigravity's own window, never a second launcher splash.
@@ -138,9 +147,14 @@ async function runSplash(preview = true) {
       $('#splash-preview-tag').textContent = preview ? 'Xem trước · không mở App' : 'Launcher'; $('#splash-phase').textContent = 'Đã xác thực launcher'; $('#splash-status').textContent = preview ? 'Đây là bản xem trước hiệu ứng.' : 'Đang gửi lệnh mở Antigravity App…'; $('#splash-progress').style.width = '25%';
       const image = $('#splash-image'), video = $('#splash-video'); image.hidden = true; video.hidden = true;
       if (config.splash.mediaId) { const url = `agc-asset://local/${config.splash.mediaId}`; if (/\.(mp4|webm)$/i.test(config.splash.mediaId)) { video.src = url; video.hidden = false; video.play().catch(() => toast('Không phát được video. Đang dùng đồ họa chủ đề.')); } else { image.src = url; image.hidden = false; } }
+      else if(preset().family==='sao'){image.src=new URL('./sao-poster.jpg',import.meta.url).href;image.hidden=false;if(motion()){video.src=new URL('./sao.mp4',import.meta.url).href;video.hidden=false;video.play().catch(()=>{video.hidden=true;});}}
       if (config.splash.soundEnabled) {
         if (config.splash.chime) chime(config.splash.volume);
-        if (config.splash.audioId) { audio = new Audio(`agc-asset://local/${config.splash.audioId}`); audio.volume = config.splash.volume / 100; audio.play().catch(() => toast('Không phát được file nhạc đã chọn.')); }
+        const audioId=selectedAudioId();
+        const bundledTrack=preset().family==='sao'?'swordland.mp3':['gundam','focus'].includes(preset().family)?'gundam-background.mp3':'';
+        let musicUrl=audioId?`agc-asset://local/${audioId}`:bundledTrack?new URL(`./audio/${bundledTrack}`,import.meta.url).href:'';
+        if(audioId&&api.readPreviewAudio){const media=await api.readPreviewAudio();if(media){audioObjectUrl=URL.createObjectURL(new Blob([new Uint8Array(media.bytes)],{type:media.mime}));musicUrl=audioObjectUrl;}else musicUrl='';}
+        if (musicUrl) { audio = new Audio(musicUrl); audio.volume = config.splash.volume / 100; audio.play().catch(() => toast('Không phát được nhạc nền đã chọn.')); }
       }
     }
     const visual = show ? new Promise(resolve => { skipResolve = () => { skipped = true; resolve(); }; timers.push(setTimeout(resolve, config.accessibility.reducedMotion || prefersReduced ? 1000 : config.splash.durationMs)); }) : Promise.resolve();
@@ -151,11 +165,20 @@ async function runSplash(preview = true) {
     if (!preview) { toast(result.message); if (config.launcher.minimizeAfterLaunch && !skipped && !result.stayInWindow) await api.minimize(); }
   } catch (e) { fail(e); }
   finally {
-    timers.forEach(clearTimeout); audio?.pause(); $('#splash-video').pause(); $('#splash-video').removeAttribute('src'); $('#splash-video').load(); $('#splash-image').removeAttribute('src');
+    timers.forEach(clearTimeout); audio?.pause();if(audioObjectUrl)URL.revokeObjectURL(audioObjectUrl); $('#splash-video').pause(); $('#splash-video').removeAttribute('src'); $('#splash-video').load(); $('#splash-image').removeAttribute('src');
     $('#splash-overlay').hidden = true; $('#workspace').inert = false; skipResolve = null; busy = false; $('#launch-button').disabled = false; $('#preview-button').disabled = false; $('#preview-button').focus();
   }
 }
 function bind() {
+  $('#apply-sao').onclick=action(async()=>{
+    await flushSave();
+    if(preset().family!=='sao')config.selectedPreset='sao-aincrad';
+    // Applying SAO only changes its own music selection. Keep all legacy Gundam settings.
+    config.splash.themeAudioIds={...config.splash.themeAudioIds,sao:''};
+    markChanged();await flushSave();render();toast('Đã áp dụng SAO + Swordland. Mở lại Antigravity để xem splash mới.');
+  });
+  $('#listen-sao').onclick=action(async()=>{saoAudioPreview?.pause();saoAudioPreview=new Audio(new URL('./audio/sao-link-start.mp3',import.meta.url).href);saoAudioPreview.volume=config.splash.volume/100;await saoAudioPreview.play();});
+  $('#stop-sao-audio').onclick=()=>saoAudioPreview?.pause();
   $('#auth-form').onsubmit = async event => {
     event.preventDefault(); const button = $('#auth-submit'); button.disabled = true; $('#auth-error').textContent = '';
     try {
@@ -181,7 +204,7 @@ function bind() {
   $('#preview-rg').onclick=()=>runSplash(true);
   $('#voice-preview').onclick=action(async()=>{await flushSave();voicePreview?.stop();voicePreview=createAnnouncer(state.builtinAudioBase,config.voice);await api.voiceActivity?.(true);try{await voicePreview.playSequence(['welcome','prompt']);}finally{await api.voiceActivity?.(false);}});
   $('#voice-stop').onclick=()=>voicePreview?.stop();
-  $('#preset-motion').onchange = event => { preset().motion = event.target.checked; markChanged(); renderGallery(); };
+  $('#preset-motion').onchange = event => { preset().motion = event.target.checked; markChanged(); renderGallery(); renderControls(); };
   $('#preset-name').oninput = event => { preset().name=event.target.value || 'Chủ đề riêng';markChanged();$('#selected-name').textContent=preset().name;renderGallery(); };
   $('#preset-accent').oninput = event => { preset().accent = event.target.value; markChanged(); renderGallery(); renderControls(); };
   $('#duplicate-button').onclick = () => { const p = { ...preset(),id:`custom-${crypto.randomUUID()}`,name:`${preset().name} · bản riêng`.slice(0,60) }; if (config.presets.length >= 64) return toast('Đã đạt giới hạn 64 preset.');config.presets.push(p); config.selectedPreset = p.id; markChanged();render();toast('Đã tạo chủ đề riêng. Bạn có thể đổi màu và chuyển động.'); };
@@ -192,7 +215,7 @@ function bind() {
   $('#lock-button').onclick = action(lock);
   for (const [selector,method] of [['#detect-button','detect'],['#choose-executable','chooseExecutable'],['#import-preset','importPreset']]) $(selector).onclick = action(async () => { await flushSave(); accept(await api[method]()); });
   $$('[data-import]').forEach(button => button.onclick = action(async () => { await flushSave(); accept(await api.importMedia(button.dataset.import)); }));
-  $$('[data-clear]').forEach(button => button.onclick = () => { const kind = button.dataset.clear; set(kind === 'audio' ? 'splash.audioId' : kind === 'splash' ? 'splash.mediaId' : 'wallpaper.mediaId',''); });
+  $$('[data-clear]').forEach(button => button.onclick = () => { const kind = button.dataset.clear;if(kind==='audio'){config.splash.themeAudioIds={...config.splash.themeAudioIds,[preset().family]:''};if(preset().family!=='sao')config.splash.audioId='';markChanged();renderControls();}else set(kind === 'splash' ? 'splash.mediaId' : 'wallpaper.mediaId',''); });
   $('#export-preset').onclick = action(async () => { await flushSave(); if (await api.exportPreset()) toast('Đã xuất preset. Không kèm mật khẩu hoặc dữ liệu riêng.'); });
   $('#remove-integration').onclick = action(async () => { accept(await api.removeIntegration()); toast('Đã gỡ giao diện tùy biến khỏi phiên hiện tại.'); });
   $('#open-data').onclick = action(() => api.openData());
@@ -208,7 +231,7 @@ try {
   state = await api.bootstrap(); config = state.config; configured = state.security.configured;
   bind();if(state.hostMode==='native-settings-tab'){document.body.classList.add('embedded-mode');const nav=$('.sidebar nav');nav.classList.add('embedded-tabs');$('.workspace-main').insertBefore(nav,$('.content'));nav.append($('#save-state'));$('#native-install').closest('.settings-card').hidden=true;$('#executable-path').closest('.settings-card').hidden=true;$('#lock-button').lastChild.textContent='Khóa cài đặt';}
   render(); if(nativeHost()&&state.security.unlocked){$('#gate').hidden=true;$('#workspace').hidden=false;render();}else showGate(); initialized = true;
-  animateScene($('#gate-canvas'),()=>config.presets.find(p=>p.id==='sao'),()=>false);
+  animateScene($('#gate-canvas'),preset,()=>false);
   animateScene($('#preview-canvas'),preset,motion); animateScene($('#splash-canvas'),preset,motion);
   if (state.recovered) toast('Cấu hình lỗi đã được giữ thành file .invalid; đang dùng cấu hình mặc định.');
 } catch(error) { $('#auth-error').textContent = error.message; $('#auth-submit').disabled = true; }

@@ -27,6 +27,8 @@ pub struct SplashConfig {
     pub volume: u32,
     #[serde(rename = "audioId")]
     pub audio_id: String,
+    #[serde(rename = "themeAudioIds", default)]
+    pub theme_audio_ids: std::collections::HashMap<String, String>,
     #[serde(rename = "soundEnabled")]
     pub sound_enabled: bool,
     pub chime: bool,
@@ -131,7 +133,9 @@ pub struct AppConfig {
 }
 
 pub fn default_builtins() -> Vec<Preset> {
-    vec![
+    let mut presets: Vec<Preset> = serde_json::from_str(include_str!("../../../src/core/sao-presets.json"))
+        .expect("Bundled SAO presets must be valid");
+    presets.extend(vec![
         Preset {
             id: "sao".into(),
             name: "White Gundam · Neural Cyan".into(),
@@ -176,7 +180,8 @@ pub fn default_builtins() -> Vec<Preset> {
             foreground: "#0f172a".into(),
             motion: false,
         },
-    ]
+    ]);
+    presets
 }
 
 pub fn default_config() -> AppConfig {
@@ -191,6 +196,7 @@ pub fn default_config() -> AppConfig {
             media_id: "".into(),
             volume: 25,
             audio_id: "".into(),
+            theme_audio_ids: std::collections::HashMap::new(),
             sound_enabled: false,
             chime: true,
             music_scope: "startup".into(),
@@ -244,7 +250,14 @@ impl ConfigStore {
 
     pub fn load(&self) -> AppConfig {
         if let Ok(content) = fs::read_to_string(&self.file_path) {
-            if let Ok(parsed) = serde_json::from_str::<AppConfig>(&content) {
+            if let Ok(mut parsed) = serde_json::from_str::<AppConfig>(&content) {
+                parsed.splash.music_scope = "startup".into();
+                // Make new built-ins available to existing profiles without replacing custom edits.
+                for preset in default_builtins() {
+                    if !parsed.presets.iter().any(|p| p.id == preset.id) {
+                        parsed.presets.push(preset);
+                    }
+                }
                 return parsed;
             }
         }

@@ -1,4 +1,5 @@
 const BUILTINS = [
+  ...require('./sao-presets.json'),
   { id: 'sao', name: 'White Gundam · Neural Cyan', description: 'Giao diện Mecha White Gundam với ánh sáng Plavsky Particle và viền kính Cyan.', family: 'gundam', mode: 'dark', accent: '#22d3ee', background: '#090e15', foreground: '#e2f4f8', motion: true },
   { id: 'gundam', name: 'White Gundam · Strike Sky', description: 'Biến thể Mecha bầu trời với ánh xanh lam Strike và hạt năng lượng cao.', family: 'gundam', mode: 'dark', accent: '#38bdf8', background: '#09111c', foreground: '#e0f2fe', motion: true },
   { id: 'focus', name: 'White Gundam · Stealth Dark', description: 'Tông đen xám cơ khí tối giản, giảm ánh sáng để tập trung lập trình.', family: 'focus', mode: 'dark', accent: '#94a3b8', background: '#0f172a', foreground: '#f8fafc', motion: false },

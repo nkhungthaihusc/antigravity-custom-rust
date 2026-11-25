@@ -3,6 +3,8 @@ const path=require('node:path'),fs=require('node:fs/promises'),{pathToFileURL}=r
 const {Security}=require('./core/security.cjs');const {ConfigStore}=require('./core/store.cjs');const {normalizeConfig,mediaId}=require('./core/config.cjs');const {getLiveQuota}=require('./core/quota.cjs');
 const {createSettings}=require('./settings.cjs');
 const {createMusic}=require('./music.cjs');
+const {themeAudio}=require('./core/theme-audio.cjs');
+const {attachSessionClose}=require('./core/shutdown.cjs');
 if(!app.isReady())protocol.registerSchemesAsPrivileged([{scheme:'agc-asset',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 const shutdownWindows=new WeakSet();
 const screens=new Map();let servicePromise,registered=false;
@@ -12,7 +14,8 @@ async function service(){
   const store=new ConfigStore(manifest.dataDirectory,normalizeConfig),config=await store.load(),security=new Security(manifest.dataDirectory);
   const assetUrl=id=>mediaId(id)?pathToFileURL(path.join(manifest.dataDirectory,'assets',id)).href:'';
   protocol.handle('agc-asset',async request=>{try{const url=new URL(request.url),file=assetUrl(url.pathname.slice(1));if(url.hostname!=='local'||!file)return new Response(null,{status:403});return net.fetch(file);}catch{return new Response(null,{status:404});}});
-  return {manifest,store,config,security,assetUrl,dataDirectory:manifest.dataDirectory,music:createMusic(assetUrl),windows:new Set()};
+  const resolveAudio=value=>themeAudio(value,{assetUrl,bundledUrl:name=>pathToFileURL(path.join(__dirname,'renderer','audio',name)).href});
+  return {manifest,store,config,security,assetUrl,resolveAudio,dataDirectory:manifest.dataDirectory,music:createMusic(value=>resolveAudio(value).audioUrl),windows:new Set()};
  })();return servicePromise;
 }
 function register(){
@@ -23,7 +26,7 @@ function register(){
    const s=await service();
    if(method==='mute-sound'){s.music.setMuted(event.sender.id,arg===true);return{ok:true,value:true};}
    if(method==='voice-activity'){s.music.setDuck(event.sender.id,arg===true);return{ok:true,value:true};}
-   if(method==='bootstrap')return{ok:true,value:{config:s.config,quota:getLiveQuota(s.config.quota),audioUrl:s.assetUrl(s.config.splash.audioId),cueAudioUrls:Object.fromEntries(Object.entries(s.config.rg.cueAudioIds).map(([key,id])=>[key,s.assetUrl(id)])),startupAudioUrl:s.assetUrl(s.config.rg.startupAudioId),endAudioUrl:s.assetUrl(s.config.rg.endAudioId),closing:!!state.closing,configured:(await s.security.status()).configured,authenticated:state.authenticated||state.reusedSession,ready:state.ready,preview:!!state.preview,readinessError:state.readinessError||'',version:'0.4.2'}};
+   if(method==='bootstrap')return{ok:true,value:{config:s.config,quota:getLiveQuota(s.config.quota),...s.resolveAudio(s.config),startupAudioUrl:s.assetUrl(s.config.rg.startupAudioId),closing:!!state.closing,configured:(await s.security.status()).configured,authenticated:state.authenticated||state.reusedSession,ready:state.ready,preview:!!state.preview,readinessError:state.readinessError||'',version:'0.5.0'}};
    if(method==='dismiss-preview'){
     if(!state.preview)throw new Error('Thao tác chỉ dùng trong màn xem trước.');
     setImmediate(()=>state.release());return{ok:true,value:true};
@@ -74,15 +77,12 @@ function create({getHubWebContents,getHubView}){
    }
    let wallpaperData='';const id=s.config.wallpaper.mediaId;
    if(mediaId(id)&&/\.(png|jpe?g|webp|gif)$/i.test(id)){try{const file=path.join(s.dataDirectory,'assets',id),stat=await fs.stat(file);if(stat.size<=8*1024*1024){const ext=path.extname(id).slice(1);wallpaperData=`data:image/${ext==='jpg'?'jpeg':ext};base64,${(await fs.readFile(file)).toString('base64')}`;}}catch{}}
-   if(!wallpaperData){try{const file=path.join(__dirname,'white-gundam.png'),stat=await fs.stat(file);if(stat.size<=8*1024*1024)wallpaperData=`data:image/png;base64,${(await fs.readFile(file)).toString('base64')}`;}catch{}}
+   if(!wallpaperData){try{const sao=s.config.presets.find(p=>p.id===s.config.selectedPreset)?.family==='sao',file=path.join(__dirname,sao?'renderer/sao-poster.jpg':'white-gundam.png'),stat=await fs.stat(file);if(stat.size<=8*1024*1024)wallpaperData=`data:image/${sao?'jpeg':'png'};base64,${(await fs.readFile(file)).toString('base64')}`;}catch{}}
    const data={native:true,origin:url.origin,preset:s.config.presets.find(p=>p.id===s.config.selectedPreset),presets:s.config.presets,wallpaper:s.config.wallpaper,wallpaperData,quota:getLiveQuota(s.config.quota)};
    const source=await fs.readFile(path.join(__dirname,'runtime.js'),'utf8');await hub.executeJavaScript(`(${source})(${JSON.stringify(data)})`);
   }
   const dispose=()=>{if(state.disposed)return;state.disposed=true;clearInterval(poll);win.off('resize',resize);hub.off('did-finish-load',checkReady);if(!win.isDestroyed()){try{win.contentView.removeChildView(view);}catch{}}if(!view.webContents.isDestroyed())view.webContents.close();};
-  state.release=async()=>{if(state.disposed)return;dispose();if(options.preview){options.onReturn?.();return;}hub.focus();
-   if(!shutdownWindows.has(win)){shutdownWindows.add(win);let closing=false;
-    void service().then(s=>{const onClose=event=>{if(closing||!s.config.rg.shutdownEnabled||s.config.presets.find(p=>p.id===s.config.selectedPreset)?.family!=='gundam')return;event.preventDefault();closing=true;attachLoadingOverlay(win,foregroundColor,backgroundColor,undefined,{closing:true});const timer=setTimeout(()=>{if(!win.isDestroyed())win.close();},4000);win.once('closed',()=>clearTimeout(timer));};win.on('close',onClose);});
-   }
+  state.release=async()=>{if(state.disposed)return;const s=await service();s.music.stop();dispose();if(options.preview){options.onReturn?.();return;}hub.focus();
    try{await updateRuntime();if(afterUnlock)await afterUnlock();}catch{/* Keep the authenticated App usable if its custom panel fails. */}};
   let checking=false;
   async function checkReady(){if(checking||state.disposed||hub.isDestroyed())return;checking=true;try{
@@ -90,9 +90,12 @@ function create({getHubWebContents,getHubView}){
    if(ready){state.ready=true;clearInterval(poll);if(!view.webContents.isDestroyed())view.webContents.send('agc-native:splash:ready',true);}
   }catch(e){state.readinessError=e.message;}finally{checking=false;}}
   hub.on('did-finish-load',checkReady);poll=setInterval(checkReady,250);
-  void(async()=>{const s=await service();state.reusedSession=s.security.isUnlocked();if(!options.preview&&!options.closing){s.windows.add(win);await s.music.update(s.config);manager=createSettings({win,hub,manifest:s.manifest,security:s.security,store:s.store,dataDirectory:s.dataDirectory,executable:process.execPath,getConfig:()=>s.config,setConfig:value=>s.config=value,updateRuntime,removeRuntime,music:s.music,getHubBounds:()=>getHubView?.(win)?.getBounds?.()||{x:0,y:0},preview:()=>attachLoadingOverlay(win,foregroundColor,backgroundColor,undefined,{preview:true,onReturn:()=>manager.focus()})});}})();
+  void(async()=>{const s=await service();state.reusedSession=s.security.isUnlocked();if(!options.preview&&!options.closing){
+   if(!shutdownWindows.has(win)){shutdownWindows.add(win);attachSessionClose({win,getConfig:()=>s.config,stopAudio:()=>s.music.stop(),createEnding:()=>{dispose();manager?.hide();return attachLoadingOverlay(win,foregroundColor,backgroundColor,undefined,{closing:true});}});}
+   s.windows.add(win);await s.music.update(s.config);manager=createSettings({win,hub,manifest:s.manifest,security:s.security,store:s.store,dataDirectory:s.dataDirectory,executable:process.execPath,getConfig:()=>s.config,setConfig:value=>s.config=value,updateRuntime,removeRuntime,music:s.music,getHubBounds:()=>getHubView?.(win)?.getBounds?.()||{x:0,y:0},preview:()=>attachLoadingOverlay(win,foregroundColor,backgroundColor,undefined,{preview:true,onReturn:()=>manager.focus()})});}})();
   void view.webContents.loadFile(path.join(__dirname,'splash.html')).then(()=>view.webContents.focus());
   win.once('closed',()=>{dispose();manager?.dispose();void removeRuntime();if(!options.preview)void service().then(s=>{s.windows.delete(win);if(!s.windows.size)s.music.stop();});});
+  return view;
  }
  return{attachLoadingOverlay};
 }

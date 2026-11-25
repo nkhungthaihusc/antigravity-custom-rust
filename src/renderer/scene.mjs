@@ -12,6 +12,10 @@ export function drawScene(canvas, preset, time = 0, motion = false) {
 
   const t = motion ? time / 1000 : 0;
   const accent = preset.accent || '#22d3ee';
+  if (preset.family === 'sao') {
+    drawSao(c,w,h,accent,t);
+    return;
+  }
   c.strokeStyle = accent;
   c.fillStyle = accent;
 
@@ -86,6 +90,22 @@ export function drawScene(canvas, preset, time = 0, motion = false) {
   c.restore();
 }
 
+function drawSao(c,w,h,accent,t) {
+  c.save();c.strokeStyle=accent;c.fillStyle=accent;c.lineWidth=1;
+  // Triangular fragments reference the virtual world's polygon dissolution.
+  for(let i=0;i<18;i++){
+    const x=((i*137+23)%997)/997*w;
+    const y=(((i*71)%251)/251*h-t*(5+i%4)+h*100)%h;
+    const size=3+i%4;c.globalAlpha=.12+(i%3)*.07;
+    c.beginPath();c.moveTo(x,y-size);c.lineTo(x+size,y+size);c.lineTo(x-size,y+size);c.closePath();c.stroke();
+  }
+  const x=w*.78,y=h*.43,r=Math.min(w,h)*.21;
+  c.translate(x,y);c.rotate(t*.08);c.globalAlpha=.4;
+  for(let i=0;i<4;i++){c.beginPath();c.arc(0,0,r,i*Math.PI/2+.1,i*Math.PI/2+1.15);c.stroke();}
+  c.rotate(Math.PI/4);c.strokeRect(-r*.57,-r*.57,r*1.14,r*1.14);
+  c.restore();
+}
+
 export function animateScene(canvas, getPreset, getMotion) {
   let frame, last = 0, disposed = false, lastKey = '';
   function tick(now) {
@@ -93,7 +113,7 @@ export function animateScene(canvas, getPreset, getMotion) {
     if (now - last >= 33 && canvas.getClientRects().length > 0) {
       const preset = getPreset(), motion = getMotion();
       const rect = canvas.getBoundingClientRect();
-      const key = JSON.stringify([preset?.accent, rect.width, rect.height, devicePixelRatio]);
+      const key = JSON.stringify([preset?.family,preset?.accent, motion, rect.width, rect.height, devicePixelRatio]);
       if (motion || key !== lastKey) {
         drawScene(canvas, preset || {}, now, motion);
         lastKey = key;

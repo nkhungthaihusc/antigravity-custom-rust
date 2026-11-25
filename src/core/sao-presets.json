@@ -1,0 +1,7 @@
+[
+  {"id":"sao-aincrad","name":"SAO · Aincrad","description":"Menu kính bạc, điểm nhấn hổ phách và mảnh đa giác. Lấy cảm hứng từ thế giới kiếm thuật ở mùa 1.","family":"sao","mode":"dark","accent":"#f5b544","background":"#101923","foreground":"#edf2f6","motion":true},
+  {"id":"sao-alfheim","name":"SAO · ALfheim","description":"Xanh ngọc của rừng và ánh sáng dịu, lấy cảm hứng từ Fairy Dance ở mùa 1.","family":"sao","mode":"dark","accent":"#79dfbf","background":"#0c211f","foreground":"#e8f5ed","motion":true},
+  {"id":"sao-ggo","name":"SAO II · Phantom Bullet","description":"Bảng điều khiển chiến thuật xanh bạc hà trên nền graphite, lấy cảm hứng từ Gun Gale Online.","family":"sao","mode":"dark","accent":"#8bd5d0","background":"#151c23","foreground":"#e4eff2","motion":true},
+  {"id":"sao-calibur","name":"SAO II · Calibur","description":"Sắc vàng của thanh kiếm và nền xanh băng, lấy cảm hứng từ hành trình Calibur.","family":"sao","mode":"dark","accent":"#e9cb7d","background":"#102333","foreground":"#edf4f9","motion":true},
+  {"id":"sao-rosario","name":"SAO II · Mother’s Rosario","description":"Sắc tử đinh hương, kính tối và chuyển động chậm, lấy cảm hứng từ câu chuyện của Yuuki và Asuna.","family":"sao","mode":"dark","accent":"#d3aff3","background":"#211b30","foreground":"#f2eaf9","motion":true}
+]

@@ -12,6 +12,7 @@
     "test": "node --test test/*.test.cjs",
     "test:rust": "cargo test --manifest-path crates/agc-core/Cargo.toml",
     "check": "node scripts/check.cjs",
+    "audit:media": "node scripts/audit-media.cjs",
     "package": "cargo build --manifest-path src-tauri/Cargo.toml --release && powershell Copy-Item src-tauri/target/release/antigravity-custom-launcher.exe 'release/Antigravity Custom.exe' -Force",
     "native:install": "node scripts/native-install.cjs install",
     "native:uninstall": "node scripts/native-install.cjs uninstall"

@@ -1,4 +1,27 @@
-# Architecture 0.2
+# Architecture 0.5 — shared launcher/native profile
+
+## Shared credentials
+
+The Rust/Tauri launcher resolves its data directory from the installed community
+`resources/agc-custom/install.json`, exactly as the native overlay does. Without
+an installation, Windows defaults to `%APPDATA%/antigravity-custom`. A malformed
+manifest fails closed instead of silently creating another profile. The former
+Rust directory under LocalAppData is no longer the active launcher profile.
+
+Both authorities reload `security.json` for authentication and password changes.
+New scrypt-v1 records use the stored hex salt as UTF-8, matching the original Node
+format. Verification also accepts the raw-byte salt used by Rust v0.5.0, so old
+passwords remain valid. Password writes replace the file atomically. Both runtimes
+serialize credential mutations through `security.json.lock`, preventing a slow
+verification from overwriting a concurrent password change. Locks do not share
+unlocked sessions; each process must authenticate independently.
+
+Legacy password repair is explicit: `scripts/sync-password.cjs` copies the selected
+old Rust credential record into the installed shared directory, backing up the
+previous native record there first. It refuses running Apps/launchers and an
+unverified or outdated native installation. It never reads a plaintext password,
+prints a credential record, or changes native config/media. Normal startup never
+imports an old credential over the current shared password.
 
 ## Native startup
 
@@ -12,7 +35,12 @@ After unlock, the module uses an internal webContents.debugger session and a sma
 
 ## Manager and distribution
 
-The standalone Electron executable is a configuration/install/uninstall tool. Actual launch never plays a separate splash in this tool. Privileged functions require main-process authentication. Native mode and the manager share normalized config, scrypt credentials and local asset IDs. User media comes from native file dialogs, is copied under generated IDs and is exposed through a constrained custom protocol.
+The standalone manager is now Rust/Tauri; the native overlay and Settings remain
+Electron code hosted by Antigravity. Actual launch never plays a separate splash
+in the manager. Save, launch, install/uninstall and password changes require
+authentication in Rust. The native Settings dispatcher retains its own main-process
+authorization. Media import and preset sharing are implemented in native Settings;
+their Tauri adapters are still placeholders.
 
 The Google process may use shared agent storage even with isolated Electron userData. Test copies and live screenshots are therefore excluded from distribution. Only community-owned source and original assets ship; Google binaries, backups and test profiles never ship.
 

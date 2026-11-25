@@ -1,5 +1,34 @@
 # Validation
 
+## Password synchronization repair — 2026-11-25
+
+- JavaScript syntax checks passed for 35 files; all 19 Node tests passed.
+- Rust release tests passed: 4 unit tests and 4 integration tests. Integration
+  tests invoke the actual Node credential authority against isolated profiles,
+  covering Rust → Node and Node → Rust password changes, rejection of old
+  passwords, compatibility with both pre-existing salt formats, corrupt-record
+  rejection and cross-process setup locking.
+- Shared-directory resolution follows an installed native manifest, including a
+  non-default native data directory. Both implementations reject corrupt manifests.
+  Explicit legacy-password repair backs up native credentials and preserves native
+  config; normal startup does not overwrite the shared password from an old profile.
+- An owned copy of the installed Antigravity App 2.35.1 executable and original
+  ASAR passed install, same-version refresh, installed-helper password change,
+  refusal to redirect an existing installation to another profile, and uninstall.
+  The copy's executable was unchanged and its original ASAR restored byte-for-byte.
+  This is installer/helper compatibility evidence, not a live Google App UI test.
+- The password repair CLI correctly refused to run while the user's App was open.
+  The Rust/Tauri release build succeeded and replaced `release/Antigravity Custom.exe`,
+  with the previous executable retained under `work/`.
+- After the user closed both applications, refreshed the actual installed 2.35.1
+  community helper and imported the existing legacy Rust credential into its native
+  profile. The previous credential was backed up in that profile, and the previous
+  community helper was copied under `work/`. The installed helper matches source;
+  the Rust CLI resolves exactly the same native directory and reports configured.
+  The imported credential matches the legacy source record. Hash checks confirm the
+  Google executable, installed ASAR and native config are all unchanged. No user
+  process was terminated. Interactive login with the user's password was not automated.
+
 ## Version 0.4.2
 
 - Added event cue playback, authenticated folder import in both manager and native Settings, whitelisted personal cue IDs, and event/track selection. Cue audio is not bundled in the EXE or exported presets.

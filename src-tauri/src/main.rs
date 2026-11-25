@@ -27,18 +27,24 @@ fn detect_antigravity_executable() -> Option<String> {
     }
 }
 
-fn is_native_installed() -> bool {
-    let local_app_data = match std::env::var("LOCALAPPDATA") {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-    let path = PathBuf::from(local_app_data)
-        .join("Programs")
-        .join("Antigravity")
-        .join("resources")
-        .join("agc-custom")
-        .join("runtime.js");
-    path.exists()
+fn native_command(action: &str, data_dir: Option<&std::path::Path>) -> Result<std::process::Output, String> {
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+    let mut command = std::process::Command::new("node");
+    command.arg(project.join("scripts/native-install.cjs")).arg(action);
+    if let Some(directory) = data_dir { command.env("AGC_DATA_DIRECTORY", directory); }
+    #[cfg(windows)] {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    command.output().map_err(|e| format!("Không chạy được bộ tích hợp: {}", e))
+}
+
+fn native_status() -> serde_json::Value {
+    match native_command("status", None) {
+        Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout).unwrap_or_else(|_| serde_json::json!({"installed":false,"error":"Không đọc được trạng thái tích hợp"})),
+        Ok(output) => serde_json::json!({"installed":false,"error":String::from_utf8_lossy(&output.stderr).trim()}),
+        Err(error) => serde_json::json!({"installed":false,"error":error}),
+    }
 }
 
 #[tauri::command]
@@ -47,29 +53,26 @@ fn get_quota() -> LiveQuota {
 }
 
 #[tauri::command]
-fn bootstrap(state: State<AppState>) -> serde_json::Value {
+fn bootstrap(state: State<AppState>) -> Result<serde_json::Value, String> {
     let security = state.security.lock().unwrap();
     let store = ConfigStore::new(&state.data_dir);
     let config = store.load();
-    let security_status = security.status();
+    let security_status = security.status()?;
     let detected_path = detect_antigravity_executable().unwrap_or_default();
 
-    serde_json::json!({
+    Ok(serde_json::json!({
         "config": config,
         "security": security_status,
         "builtins": default_builtins(),
         "appVersion": "0.5.0",
         "hostMode": "tauri-native",
         "detectedPath": detected_path,
-        "nativeStatus": {
-            "installed": is_native_installed(),
-            "appVersion": "2.35.1"
-        },
+        "nativeStatus": native_status(),
         "integration": {
             "state": "native",
             "message": "Trình quản lý Rust Native đang kết nối."
         }
-    })
+    }))
 }
 
 #[tauri::command]
@@ -85,17 +88,19 @@ fn unlock(state: State<AppState>, password: String) -> Result<SecurityStatus, St
 }
 
 #[tauri::command]
-fn lock(state: State<AppState>) -> SecurityStatus {
+fn lock(state: State<AppState>) -> Result<SecurityStatus, String> {
     let mut security = state.security.lock().unwrap();
     security.lock();
     security.status()
 }
 
 #[tauri::command]
-fn save(state: State<AppState>, config: AppConfig) -> Result<serde_json::Value, String> {
+fn save(state: State<AppState>, mut config: AppConfig) -> Result<serde_json::Value, String> {
+    state.security.lock().unwrap().require()?;
+    config.splash.music_scope = "startup".into();
     let store = ConfigStore::new(&state.data_dir);
     store.save(&config)?;
-    Ok(bootstrap(state))
+    bootstrap(state)
 }
 
 #[tauri::command]
@@ -105,7 +110,18 @@ fn change_password(state: State<AppState>, current: String, next: String) -> Res
 }
 
 #[tauri::command]
-fn launch() -> Result<serde_json::Value, String> {
+fn launch(state: State<AppState>) -> Result<serde_json::Value, String> {
+    state.security.lock().unwrap().require()?;
+    let status = native_status();
+    if status["supported"] != true {
+        return Err(status["error"].as_str().unwrap_or("Bản Antigravity App chưa được hỗ trợ hoặc chưa kiểm tra được tích hợp.").to_string());
+    }
+    if status["installed"] != true || status["updateAvailable"] == true {
+        let output = native_command("install", Some(&state.data_dir))?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+    }
     let exe = detect_antigravity_executable().ok_or("Không tìm thấy file Antigravity.exe")?;
     std::process::Command::new(exe)
         .spawn()
@@ -132,33 +148,31 @@ fn open_data(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn native_install() -> Result<serde_json::Value, String> {
-    let status = std::process::Command::new("node")
-        .args(["scripts/native-install.cjs", "install"])
-        .status()
-        .map_err(|e| format!("Lỗi gọi installer: {}", e))?;
-    if status.success() {
-        Ok(serde_json::json!({ "installed": true, "message": "Đã cài đặt splash native thành công." }))
-    } else {
-        Err("Cài đặt splash native thất bại. Hãy chắc chắn Antigravity đã đóng hoàn toàn.".into())
-    }
+fn preview_audio(state: State<AppState>) -> Result<Option<agc_core::audio::PreviewAudio>, String> {
+    let mut security = state.security.lock().unwrap();
+    security.require()?;
+    let config = ConfigStore::new(&state.data_dir).load();
+    agc_core::audio::preview_audio(&state.data_dir, &config, &mut security)
 }
 
 #[tauri::command]
-fn native_uninstall() -> Result<serde_json::Value, String> {
-    let status = std::process::Command::new("node")
-        .args(["scripts/native-install.cjs", "uninstall"])
-        .status()
-        .map_err(|e| format!("Lỗi gọi uninstaller: {}", e))?;
-    if status.success() {
-        Ok(serde_json::json!({ "installed": false, "message": "Đã khôi phục splash gốc." }))
-    } else {
-        Err("Khôi phục splash gốc thất bại.".into())
-    }
+fn native_install(state: State<AppState>) -> Result<serde_json::Value, String> {
+    state.security.lock().unwrap().require()?;
+    let output = native_command("install", Some(&state.data_dir))?;
+    if output.status.success() { bootstrap(state) }
+    else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
+}
+
+#[tauri::command]
+fn native_uninstall(state: State<AppState>) -> Result<serde_json::Value, String> {
+    state.security.lock().unwrap().require()?;
+    let output = native_command("uninstall", Some(&state.data_dir))?;
+    if output.status.success() { bootstrap(state) }
+    else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
 }
 
 fn main() {
-    let data_dir = get_data_dir();
+    let data_dir = get_data_dir().expect("Không thể mở thư mục dữ liệu dùng chung với Antigravity");
     let security = Mutex::new(SecurityManager::new(&data_dir));
 
     tauri::Builder::default()
@@ -174,6 +188,7 @@ fn main() {
             launch,
             minimize,
             open_data,
+            preview_audio,
             native_install,
             native_uninstall
         ])

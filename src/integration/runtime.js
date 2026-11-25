@@ -50,6 +50,12 @@ function installAntigravityCustom(data) {
         box-shadow: 0 0 12px ${accent}40 !important;
       }
     `;
+    if(p.family==='sao')themeStyle.textContent+=`
+      #agc-quota-hud #agc-quota-pill { border-color:${accent}88; border-radius:2px; box-shadow:none; }
+      #agc-quota-hud .agc-dot { background:${accent}!important;box-shadow:none!important; }
+      #agc-quota-hud :is(.agc-hd-title,.agc-hd-badge,.agc-btn-link,.agc-pill-item i) { color:${accent}!important; }
+      #agc-quota-hud .agc-fill:not(.agc-fill-low) { background:${accent}!important; }
+    `;
   }
 
   // 3. Live Quota Telemetry HUD

@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { promisify } = require('node:util');
 const { atomicWrite } = require('./store.cjs');
+const { withCredentialLock } = require('./credential-lock.cjs');
 const scrypt = promisify(crypto.scrypt);
 const PARAMS = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 function validatePassword(value) { if (typeof value !== 'string' || value.length < 8 || value.length > 256) throw new Error('Mật khẩu cần từ 8 đến 256 ký tự.'); }
@@ -11,11 +12,15 @@ function validCredential(record) { return record?.algorithm === 'scrypt-v1' && /
 async function comparePassword(password, record) {
   if (typeof password !== 'string' || password.length > 256 || !validCredential(record)) return false;
   const candidate = await scrypt(password, record.salt, 64, PARAMS);
-  return crypto.timingSafeEqual(candidate, Buffer.from(record.hash, 'hex'));
+  const expected = Buffer.from(record.hash, 'hex');
+  if (crypto.timingSafeEqual(candidate, expected)) return true;
+  // Compatibility with v0.5.0 Rust, which decoded the stored salt first.
+  const legacy = await scrypt(password, Buffer.from(record.salt, 'hex'), 64, PARAMS);
+  return crypto.timingSafeEqual(legacy, expected);
 }
 class Security {
   constructor(directory) { this.file = path.join(directory, 'security.json'); this.sessionUntil = 0; this.queue = Promise.resolve(); }
-  exclusive(fn) { const promise = this.queue.catch(() => {}).then(fn); this.queue = promise; return promise; }
+  exclusive(fn) { const promise = this.queue.catch(() => {}).then(() => withCredentialLock(this.file, fn)); this.queue = promise; return promise; }
   async record() {
     try { const record = JSON.parse(await fs.readFile(this.file, 'utf8')); if (!validCredential(record)) throw new Error('Dữ liệu mật khẩu hỏng. Xem hướng dẫn khôi phục trong README.'); return record; }
     catch (e) { if (e.code === 'ENOENT') return null; throw e; }
@@ -38,4 +43,4 @@ class Security {
   }); }
   change(current, next) { return this.exclusive(async () => { this.require(); validatePassword(next); const r = await this.record(); if (!r || !await comparePassword(current, r)) throw new Error('Mật khẩu hiện tại chưa đúng.'); await atomicWrite(this.file, { ...await hashPassword(next), failures: 0, lockedUntil: 0 }); return true; }); }
 }
-module.exports = { Security, hashPassword, comparePassword };
+module.exports = { Security, hashPassword, comparePassword, PASSWORD_FORMAT_VERSION: 2 };

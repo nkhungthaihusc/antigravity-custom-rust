@@ -1,0 +1,46 @@
+@font-face{font-family:Rajdhani;src:url('fonts/Rajdhani-SemiBold.ttf') format('truetype');font-weight:600;font-style:normal;font-display:swap}
+.sao-setup{margin-bottom:24px}.sao-setup p{font-size:12px;max-width:760px}.sao-setup button{margin:0 12px 8px 0}
+/* Fan interpretation of the season I/II menus; typography and geometry are original. */
+body[data-theme-family="sao"]{--bg:var(--sao-bg,#101923);--text:var(--sao-text,#edf2f6);--surface:#19232e;--border:#485360;--muted:#bcc7d1;--subtle:#a3b0bd;--radius:3px;background:linear-gradient(100deg,#0a1019ed,#101923da),url('sao-poster.jpg') center/cover fixed;font-family:'Segoe UI',sans-serif;color:var(--text)}
+body[data-theme-family="sao"] :is(h1,h2,.mini-splash strong,.brand-title){font-family:Rajdhani,'Segoe UI',sans-serif;font-weight:600;letter-spacing:0}
+body[data-theme-family="sao"] :is(.sidebar,.topbar,.settings-card,.preview-panel,.help-card){background:color-mix(in srgb,var(--sao-bg) 92%,transparent)!important;border-color:#6b78874d!important;backdrop-filter:blur(12px);border-radius:3px}
+body[data-theme-family="sao"] .gate-scene{background:linear-gradient(90deg,#0c15205c,#0c1520ca),url('sao-poster.jpg') center/cover!important}
+.theme-card[data-family="sao"] .theme-art{background:linear-gradient(0deg,#101923b3,#10192322),url('sao-poster.jpg') center/cover!important;border-radius:0;border-bottom:2px solid var(--card-accent)}
+.theme-card[data-family="sao"] .theme-card-title{font-family:Rajdhani,'Segoe UI',sans-serif;font-weight:600;font-size:18px}
+body[data-theme-family="sao"] .live-preview-art{background:linear-gradient(#10192338,#101923ad),url('sao-poster.jpg') center/cover}
+body[data-theme-family="sao"] .live-preview{border-color:#6b788780!important;border-radius:0;box-shadow:none!important}
+body[data-theme-family="sao"] .button.primary{background:var(--accent)!important;color:#14202a!important;border:1px solid var(--accent)!important;border-radius:2px;box-shadow:none;font-weight:600}
+body[data-theme-family="sao"] .primary span{color:#14202a}
+body[data-theme-family="sao"] .button.secondary{border-radius:2px;background:#253240;border-color:#586674}
+body[data-theme-family="sao"] .nav-item.active{background:#e4eaf0!important;color:#182430!important;border-color:#e4eaf0!important;border-left:3px solid var(--accent)!important;border-radius:2px}
+body[data-theme-family="sao"] .theme-check{border-radius:2px;background:var(--accent)}
+body[data-theme-family="sao"] .preview-heading{background:#e4eaf0;color:#253240;border-bottom:3px solid var(--accent)}
+body[data-theme-family="sao"] .status-tag{background:#cfd7df;color:#253240}
+body[data-theme-family="sao"] .mini-quota-preview span{border-color:#68788780;background:#101923cf}
+body[data-theme-family="sao"] .mini-label{letter-spacing:.5px;opacity:1}
+body[data-theme-family="sao"] :is(.theme-card,.settings-card){animation:sao-menu-open .28s ease-out both}
+body[data-theme-family="sao"] .theme-card:nth-child(2n){animation-delay:.04s}
+@keyframes sao-menu-open{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+/* Native startup: floating content over the wallpaper, like the Gundam splash. */
+body[data-theme-family="sao"]>main{place-items:center;text-align:center;padding:100px 24px;z-index:2;overflow:auto}
+body[data-theme-family="sao"]>main>section{position:relative;width:min(520px,100%);padding:0;background:transparent;border:0;box-shadow:none;backdrop-filter:none;animation:sao-menu-open .3s ease-out both}
+body[data-theme-family="sao"]>main :is(h1,.description){letter-spacing:0}
+body[data-theme-family="sao"]>main h1{font-size:clamp(30px,3vw,42px);line-height:1.2;margin-bottom:18px;text-shadow:0 2px 18px #0009}
+body[data-theme-family="sao"]>main :is(.description,form label){color:#d5e0e8;text-shadow:0 1px 6px #000}
+body[data-theme-family="sao"]>main form{width:min(340px,100%);margin:0 auto}
+body[data-theme-family="sao"]>main .primary{background:#101b25a6!important;color:#edf2f6!important;border-color:#9aadb499!important;border-radius:3px;backdrop-filter:blur(6px)}
+body[data-theme-family="sao"]>main .primary:hover{background:#172c3acf!important;border-color:var(--accent)!important}
+body[data-theme-family="sao"]>main .primary span{color:#b5c8d4}
+body[data-theme-family="sao"] .shade{background:radial-gradient(ellipse at center,#07111bb3 0%,#07111b80 40%,#070b0e59 100%)}
+body[data-theme-family="sao"] #scene{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+body[data-theme-family="sao"] :is(.orbit,.orbit-inner,.orbit-core,.orbit-bracket){border-color:var(--accent);box-shadow:none}
+body[data-theme-family="sao"] .orbit-wrap{height:140px;transform:scale(.7);transform-origin:center}
+body[data-theme-family="sao"] :is(.boot-progress-fill,.quota-progress-bar,.q-pulse-dot){background:var(--accent);box-shadow:none}
+body[data-theme-family="sao"] :is(.q-title,.quota-name,.quota-metric-row b){color:#edf2f6}
+body[data-theme-family="sao"] :is(.q-badge,.eyebrow,.q-icon){color:var(--accent)}
+body[data-theme-family="sao"] .transition-vignette{background:radial-gradient(circle,#14202a88,#081018f5)}
+body[data-theme-family="sao"] .transition-flare{display:none}
+body[data-theme-family="sao"] #flow-banner{color:var(--accent)}
+body[data-theme-family="sao"].reduced-motion *,body[data-theme-family="sao"].reduced-motion *::before,body[data-theme-family="sao"].reduced-motion *::after{animation:none!important;transition:none!important}
+@media(prefers-reduced-motion:reduce){body[data-theme-family="sao"] *,body[data-theme-family="sao"] *::before,body[data-theme-family="sao"] *::after{animation:none!important;transition:none!important}}
+@media(max-width:760px){body[data-theme-family="sao"]>main{padding:100px 20px}}

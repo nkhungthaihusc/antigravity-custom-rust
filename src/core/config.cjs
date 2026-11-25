@@ -30,7 +30,7 @@ function normalizeConfig(raw = {}) {
     }
   }
   return { schemaVersion: 1, selectedPreset: presets.some(p => p.id === raw.selectedPreset) ? raw.selectedPreset : d.selectedPreset, presets,
-    splash: { enabled: flag(s.enabled, d.splash.enabled), durationMs: bounded(s.durationMs, 1000, 10000, d.splash.durationMs), displayName: text(s.displayName, 40, d.splash.displayName), mediaId: mediaId(s.mediaId), audioId: mediaId(s.audioId), volume: bounded(s.volume, 0, 100, d.splash.volume), soundEnabled: flag(s.soundEnabled, false), chime: flag(s.chime, true), musicScope:s.musicScope==='session'?'session':'startup' },
+    splash: { enabled: flag(s.enabled, d.splash.enabled), durationMs: bounded(s.durationMs, 1000, 10000, d.splash.durationMs), displayName: text(s.displayName, 40, d.splash.displayName), mediaId: mediaId(s.mediaId), audioId: mediaId(s.audioId), themeAudioIds:Object.fromEntries(['sao','gundam','focus'].map(family=>[family,mediaId(plain(s.themeAudioIds)?s.themeAudioIds[family]:'')])), volume: bounded(s.volume, 0, 100, d.splash.volume), soundEnabled: flag(s.soundEnabled, false), chime: flag(s.chime, true), musicScope:'startup' },
     wallpaper: { enabled: flag(w.enabled, true), mediaId: mediaId(w.mediaId), opacity: bounded(w.opacity, 0, 40, 15), blur: bounded(w.blur, 0, 16, 0) },
     launcher: { executable: text(l.executable, 1024), minimizeAfterLaunch: flag(l.minimizeAfterLaunch, true) },
     integration: { enabled: flag(raw.integration?.enabled, false) }, accessibility: { reducedMotion: flag(raw.accessibility?.reducedMotion, false) },

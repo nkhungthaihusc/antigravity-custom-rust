@@ -1,0 +1,17 @@
+{
+  "password": "Fixture mật khẩu 🔐",
+  "node": {
+    "algorithm": "scrypt-v1",
+    "salt": "00112233445566778899aabbccddeeff",
+    "hash": "e4b0b88d07f3679ae315ddf3f07df2aa295165bb474226e260a692030400f63ed0c6c3a3199dacceaa5ed06c206329ec52511d176801c837f8010f3ed001b873",
+    "failures": 0,
+    "lockedUntil": 0
+  },
+  "legacyRust": {
+    "algorithm": "scrypt-v1",
+    "salt": "00112233445566778899aabbccddeeff",
+    "hash": "7946ef699a70150ac9b63beacd28a95715ba9b734748ab31988492432a783ee87256b1ae55fcfbae371299146d9c054b4f5be51ff80c9cf4a086222178c2ab19",
+    "failures": 0,
+    "lockedUntil": 0
+  }
+}

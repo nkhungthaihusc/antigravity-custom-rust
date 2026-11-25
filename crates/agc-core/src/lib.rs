@@ -1,22 +1,10 @@
 pub mod config;
+pub mod audio;
+pub mod profile;
 pub mod quota;
 pub mod security;
 
-use std::fs;
-use std::path::PathBuf;
-
-pub fn get_data_dir() -> PathBuf {
-    let dir = directories::ProjectDirs::from("local", "antigravity", "custom")
-        .map(|dirs| dirs.data_local_dir().to_path_buf())
-        .unwrap_or_else(|| {
-            let home = directories::BaseDirs::new()
-                .map(|b| b.home_dir().to_path_buf())
-                .unwrap_or_else(|| PathBuf::from("."));
-            home.join(".antigravity-custom")
-        });
-    let _ = fs::create_dir_all(&dir);
-    dir
-}
+pub use profile::get_data_dir;
 
 #[cfg(test)]
 mod tests {
@@ -44,22 +32,22 @@ mod tests {
     fn test_security_flow() {
         let temp = tempfile::tempdir().unwrap();
         let mut sec = security::SecurityManager::new(temp.path());
-        assert!(!sec.status().configured);
-        assert!(!sec.status().unlocked);
+        assert!(!sec.status().unwrap().configured);
+        assert!(!sec.status().unwrap().unlocked);
 
         sec.setup("TestPass@123").unwrap();
-        assert!(sec.status().configured);
-        assert!(sec.status().unlocked);
+        assert!(sec.status().unwrap().configured);
+        assert!(sec.status().unwrap().unlocked);
 
         sec.lock();
-        assert!(sec.status().configured);
-        assert!(!sec.status().unlocked);
+        assert!(sec.status().unwrap().configured);
+        assert!(!sec.status().unwrap().unlocked);
 
         assert!(sec.verify("WrongPass").is_err());
-        assert!(!sec.status().unlocked);
+        assert!(!sec.status().unwrap().unlocked);
 
         assert!(sec.verify("TestPass@123").is_ok());
-        assert!(sec.status().unlocked);
+        assert!(sec.status().unwrap().unlocked);
 
         sec.change_password("TestPass@123", "NewPass@456").unwrap();
         assert!(sec.verify("NewPass@456").is_ok());
