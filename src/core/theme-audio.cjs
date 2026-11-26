@@ -7,6 +7,7 @@ function themeAudio(config,{assetUrl,bundledUrl}){
  // Link Start belongs after successful authentication, never on each password attempt.
  if(sao)cues.authenticated=bundledUrl('sao-link-start.mp3');
  if(['gundam','focus'].includes(family)&&!cues.begin)cues.begin=bundledUrl('gundam-gp-base.mp3');
+ if(['gundam','focus'].includes(family)&&!cues.enter)cues.enter=bundledUrl('gundam-battle-start.mp3');
  const ending=!sao&&['gundam','focus'].includes(family)?assetUrl(config.rg.endAudioId)||bundledUrl('gundam-session-end.mp3'):'';
  return{audioUrl:music,cueAudioUrls:cues,endAudioUrl:ending,sao};
 }

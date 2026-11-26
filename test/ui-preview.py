@@ -139,8 +139,9 @@ with sync_playwright() as p:
         gundam_state['startupAudioUrl']=base+'/src/renderer/audio/sao-link-start.mp3'
         gundam_state['audioUrl']=base+'/src/renderer/audio/gundam-background.mp3'
         gundam_state['config']['rg']['audioMode']='track'
-        gundam_state['cueAudioUrls']={'begin':base+'/src/renderer/audio/gundam-gp-base.mp3'}
-        gundam.add_init_script('window.fixture='+json.dumps(gundam_state,ensure_ascii=False)+''';window.nativeCustom={bootstrap:async()=>window.fixture,onReady:()=>{},voiceActivity:async()=>{},muteSound:async()=>{}};''')
+        gundam_state['cueAudioUrls']={'begin':base+'/src/renderer/audio/gundam-gp-base.mp3','enter':base+'/src/renderer/audio/gundam-battle-start.mp3'}
+        gundam_state['config']['rg']['cinematicMode']='quick'
+        gundam.add_init_script('window.fixture='+json.dumps(gundam_state,ensure_ascii=False)+''';window.entryFinished=0;window.nativeCustom={bootstrap:async()=>window.fixture,authenticate:async()=>({ready:true}),finish:async()=>{window.entryFinished++;return{finished:true}},onReady:()=>{},voiceActivity:async()=>{},muteSound:async()=>{}};''')
         gundam.goto(base+'/src/native/splash.html')
         expect(gundam.locator('#startup-music')).to_have_js_property('paused',False)
         assert gundam.locator('#startup-music').evaluate('e=>e.src.endsWith("gundam-background.mp3")')
@@ -150,6 +151,17 @@ with sync_playwright() as p:
         assert gundam.locator('#cue-audio').evaluate('e=>e.src.endsWith("gundam-gp-base.mp3")')
         assert gundam.locator('#cinematic-audio').evaluate('e=>e.paused')
         assert gundam.locator('#startup-music').evaluate('e=>e.volume')==.07
+        gundam.locator('#password').fill('fixture-password');gundam.locator('#authenticate').click()
+        gundam.locator('#welcome').wait_for(state='visible')
+        gundam.locator('#enter-system').click()
+        expect(gundam.locator('#cue-audio')).to_have_js_property('paused',False)
+        assert gundam.locator('#cue-audio').evaluate('e=>e.src.endsWith("gundam-battle-start.mp3")')
+        gundam.wait_for_timeout(1600)
+        assert gundam.evaluate('window.entryFinished')==0
+        assert gundam.locator('#startup-music').evaluate('e=>!e.paused&&e.volume===.25')
+        expect(gundam.locator('#startup-music')).to_have_js_property('paused',True,timeout=9000)
+        assert gundam.evaluate('window.entryFinished')==1
+        assert gundam.locator('#cue-audio').evaluate('e=>e.paused')
         ending=context.new_page()
         ending.route('**/src/native/renderer/**',lambda route:route.fulfill(path=str(root/'src/renderer'/route.request.url.split('/src/native/renderer/')[1])))
         ending_state=json.loads(json.dumps(gundam_state));ending_state['closing']=True
@@ -163,7 +175,36 @@ with sync_playwright() as p:
     native.locator('body.reduced-motion').wait_for(state='attached')
     assert native.locator('#backdrop-video').is_hidden()
     assert native.locator('#backdrop-image').is_visible()
+    # Missing quota + a never-ready backend must not trap an authenticated screen.
+    # A late readiness response also recovers a missed onReady notification.
+    for backend_ready in [False,True]:
+        pending=context.new_page();pending.on('pageerror',lambda e:errors.append(str(e)))
+        pending.route('**/src/native/renderer/**',lambda route:route.fulfill(path=str(root/'src/renderer'/route.request.url.split('/src/native/renderer/')[1])))
+        pending_state=json.loads(json.dumps(state));pending_state['config']['selectedPreset']='focus'
+        pending_state['ready']=False;pending_state['quota']=None;pending_state['config']['splash']['soundEnabled']=False
+        pending.add_init_script('window.fixture='+json.dumps(pending_state,ensure_ascii=False)+';window.backendReady='+json.dumps(backend_ready)+''';window.finishRequests=[];window.fixtureAuthed=false;
+        window.nativeCustom={bootstrap:async()=>window.fixture,authenticate:async()=>{window.fixtureAuthed=true;return{ready:false}},
+        readiness:async()=>({ready:window.backendReady}),onReady:()=>{},voiceActivity:async()=>{},muteSound:async()=>{},
+        finish:async(arg)=>{if(!window.fixtureAuthed)throw new Error('Locked fixture');window.finishRequests.push(arg);return{finished:true}}};''')
+        pending.clock.install()
+        pending.goto(base+'/src/native/splash.html')
+        pending.locator('#begin').click();pending.locator('#password').fill('fixture-password');pending.locator('#authenticate').click()
+        pending.locator('#boot').wait_for(state='visible')
+        pending.clock.run_for(5001)
+        if not backend_ready:
+            assert pending.locator('#boot').is_visible()
+            pending.clock.run_for(10001)
+        pending.locator('#welcome').wait_for(state='visible')
+        if not backend_ready:
+            expect(pending.locator('#system-status')).to_contain_text('App chưa báo sẵn sàng')
+            assert pending.locator('#retry-ready').is_visible()
+            pending.screenshot(path=str(root/'work/boot-wait-fallback.png'))
+        else:assert pending.locator('#retry-ready').is_hidden()
+        pending.locator('#enter-system').click();pending.clock.run_for(1300)
+        assert pending.evaluate('window.finishRequests.length')==1
+        assert pending.evaluate('window.finishRequests[0].allowPending')==(not backend_ready)
+        pending.close()
     assert not errors,errors
-    print('PASS: all three Gundam/Focus presets play private audio in Tauri Blob previews and native splashes; floating SAO; SAO-only controls; startup scope; entry stops audio; silent ending; auth safety; reduced motion; no page errors')
+    print('PASS: all three Gundam/Focus presets play private audio in Tauri Blob previews and native splashes; floating SAO; SAO-only controls; startup scope; entry stops audio; silent ending; auth safety; reduced motion; missing-quota readiness fallback and missed-event recovery; no page errors')
     browser.close()
 server.shutdown()

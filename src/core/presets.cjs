@@ -7,11 +7,11 @@ const BUILTINS = [
 ];
 const DEFAULT_CONFIG = {
   schemaVersion: 1, selectedPreset: 'sao', presets: BUILTINS,
-  splash: { enabled: true, durationMs: 3200, displayName: 'Thái Nguyễn', mediaId: '', volume: 25, audioId: '', soundEnabled: false, chime: true },
+  splash: { enabled: true, durationMs: 3200, displayName: 'Pilot', mediaId: '', volume: 25, audioId: '', soundEnabled: false, chime: true },
   wallpaper: { enabled: true, mediaId: '', opacity: 20, blur: 0 },
   launcher: { executable: '', minimizeAfterLaunch: true },
   integration: { enabled: false }, accessibility: { reducedMotion: false },
-  rg: { enabled: true, color: '#22d3ee', operatorName: 'Thái Nguyễn', unitName: 'WHITE GUNDAM', modelName: 'RG-01', operatorClass: 'OPERATOR', systemName: 'NEURAL SYSTEM', readyText: 'SYSTEM READY' },
+  rg: { enabled: true, color: '#22d3ee', operatorName: 'Pilot', unitName: 'WHITE GUNDAM', modelName: 'RG-01', operatorClass: 'OPERATOR', systemName: 'NEURAL SYSTEM', readyText: 'SYSTEM READY' },
   voice: { enabled: false, style: 'system', volume: 45 }
 };
 module.exports = { BUILTINS, DEFAULT_CONFIG };

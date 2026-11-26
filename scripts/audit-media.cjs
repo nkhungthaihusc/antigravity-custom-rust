@@ -6,7 +6,7 @@ const {resolveDataDirectory}=require('../src/core/profile.cjs');
  const app=await installer.inspect(await discoverExecutable());
  if(!app.installed)throw new Error('Chưa có tích hợp native để kiểm tra tài nguyên.');
  const runtime=path.join(app.mod,app.manifest.runtimeRelative);
- const names=['gundam-background.mp3','gundam-gp-base.mp3','gundam-session-end.mp3','sao-link-start.mp3','swordland.mp3'];
+ const names=['gundam-background.mp3','gundam-gp-base.mp3','gundam-battle-start.mp3','gundam-session-end.mp3','sao-link-start.mp3','swordland.mp3'];
  const results=[];const hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
  for(const name of names){const source=await fs.readFile(path.resolve(__dirname,'../src/renderer/audio',name));const installed=await fs.readFile(path.join(runtime,'renderer/audio',name));results.push({name,installedMatches:hash(source)===hash(installed)});}
  const data=await resolveDataDirectory(),config=JSON.parse(await fs.readFile(path.join(data,'config.json')));

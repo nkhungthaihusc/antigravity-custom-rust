@@ -6,6 +6,28 @@ const $=s=>document.querySelector(s),api=window.nativeCustom;
 let state,ready=false,bootStarted=false,animationFinished=false,finishing=false,audio,announcer,skipTimer,rgActive=false;
 let cuePlayer,cueMode=false,trackMode=false,cueGeneration=0,authPending=false;
 let muted=false,flowTimer,cinematic,cinematicTimer,cinematicAttempted=false,cinematicFinished=false,removeMotion=()=>{};
+let readinessExpired=false,readinessTimer,readinessPoll,readinessRequest=false;
+function stopReadinessWait(){clearTimeout(readinessTimer);clearInterval(readinessPoll);}
+function acceptReady(value){
+ ready=value===true;
+ if(!ready)return;
+ stopReadinessWait();
+ if(!bootStarted)return;
+ $('#boot-status').textContent='Giao diện chính đã sẵn sàng.';rgStatus('CORE ONLINE');
+ if(welcomeShown){status('Giao diện Antigravity đã sẵn sàng');$('#retry-ready').hidden=true;$('#enter-system').firstChild.textContent='Bắt đầu ';flow('ready','HỆ THỐNG SẴN SÀNG');}
+ else showWelcome();
+}
+async function refreshReadiness(){
+ if(readinessRequest||!api.readiness)return;
+ readinessRequest=true;
+ try{const result=await api.readiness();state.readinessError=result.readinessError||'';if(result.ready)acceptReady(true);}catch(error){state.readinessError=error.message;}
+ finally{readinessRequest=false;}
+}
+function waitForReadiness(){
+ stopReadinessWait();
+ readinessTimer=setTimeout(()=>{if(ready)return;readinessExpired=true;clearInterval(readinessPoll);showWelcome();},15000);
+ if(api.readiness){void refreshReadiness();readinessPoll=setInterval(()=>void refreshReadiness(),1500);}
+}
 const audioStatus=text=>{$('#audio-status').hidden=!rgActive;$('#audio-status').textContent=text;};
 function stopCinematic(){clearTimeout(cinematicTimer);if(cinematic){cinematic.onended=null;cinematic.onerror=null;cinematic.onplaying=null;cinematic.ontimeupdate=null;cinematic.pause();cinematic.removeAttribute('src');cinematic.load();cinematic=null;}void api.voiceActivity(false).catch(()=>{});}
 function startCinematic(preview=false){
@@ -42,13 +64,16 @@ function updateQuotaTelemetry(){
  setBar('#splash-q-codex-week', '#splash-q-codex-week-bar', q.codexWeek);
 }
 function showWelcome(){
- if(!ready||!animationFinished||welcomeShown)return;
+ if((!ready&&!readinessExpired)||!animationFinished||welcomeShown)return;
  welcomeShown=true;
  stage('welcome',4,'Sẵn sàng');flow('ready','HỆ THỐNG SẴN SÀNG');
  $('#welcome-title').textContent='Chào '+(state.config.splash.displayName||'Pilot');
- status('Giao diện Antigravity đã sẵn sàng');rgStatus('SYSTEM ONLINE');
+ status(ready?'Giao diện Antigravity đã sẵn sàng':'App chưa báo sẵn sàng. Bạn có thể mở giao diện App hoặc kiểm tra lại.');rgStatus(ready?'SYSTEM ONLINE':'WAITING FOR APP');
+ if(!ready)flow('waiting','ĐÃ XÁC THỰC · CHỜ GIAO DIỆN APP');
+ $('#retry-ready').hidden=ready;
  updateQuotaTelemetry();
  const enter=$('#enter-system');
+ enter.firstChild.textContent=ready?'Bắt đầu ':'Vào giao diện App ';
  enter.hidden=false;
  enter.focus();
 }
@@ -73,25 +98,27 @@ async function enterSystem(){
  status('Đang khởi chạy giao diện Antigravity…');
  const overlay=$('#transition-overlay');if(overlay)overlay.hidden=false;
  document.body.classList.add('is-entering');
- if(cueMode)void playCue('enter');
+ const gundamEntry=['gundam','focus'].includes(document.body.dataset.themeFamily)&&!!state.cueAudioUrls?.enter;
+ if(gundamEntry&&audio)audio.volume=state.config.splash.volume/100;
+ const entryCue=(cueMode||gundamEntry)?playCue('enter'):Promise.resolve('missing');
  const reduced=document.body.classList.contains('reduced-motion')||state.config.accessibility.reducedMotion;
  const transitionDuration=reduced?300:1200;
- const savedVolumes=fadeAudioDown(transitionDuration);
+ const savedVolumes=gundamEntry?[]:fadeAudioDown(transitionDuration);
  if(!reduced){
   setTimeout(()=>{
    const statusEl=$('#transition-status');
    if(statusEl)statusEl.textContent='WORKSPACE SYNCHRONIZED · LAUNCHING';
   },600);
  }
- await new Promise(r=>setTimeout(r,transitionDuration));
+ await Promise.all([new Promise(r=>setTimeout(r,transitionDuration)),gundamEntry?entryCue:Promise.resolve()]);
  try{
-  if((await api.finish()).finished){audio?.pause();cuePlayer?.stop();stopCinematic();return;}
+  if((await api.finish({allowPending:!ready&&readinessExpired})).finished){stopReadinessWait();audio?.pause();cuePlayer?.stop();stopCinematic();return;}
   status('Đang chờ giao diện App…');
  }catch(e){status(e.message);}
  finishing=false;if(button){button.disabled=false;button.hidden=false;}
  savedVolumes.forEach(({el,vol})=>{try{el.volume=vol;}catch{}});
  document.body.classList.remove('is-entering');if(overlay)overlay.hidden=true;
- flow('ready','HỆ THỐNG SẴN SÀNG');
+ flow(ready?'ready':'waiting',ready?'HỆ THỐNG SẴN SÀNG':'ĐÃ XÁC THỰC · CHỜ GIAO DIỆN APP');
  void audio?.play().catch(()=>{});
 }
 function startSplashMusic({soundEnabled,volume}){
@@ -103,6 +130,9 @@ function startSplashMusic({soundEnabled,volume}){
 function startBoot(){
  if(bootStarted)return;bootStarted=true;announcer?.stop();stage('boot',3,'System initialization');const currentPreset=state.config.presets.find(p=>p.id===state.config.selectedPreset)||state.config.presets[0];$('#boot-title').textContent=(currentPreset&&names[currentPreset.family])||'Link Start';rgStatus('ACCESS GRANTED');flow('success','XÁC THỰC THÀNH CÔNG');clearTimeout(flowTimer);flowTimer=setTimeout(()=>{if(!welcomeShown)flow('welcome','CHÀO MỪNG TỚI ANTIGRAVITY');},state.config.accessibility.reducedMotion?0:700);
  status(ready?'Giao diện đã tải · đang hoàn tất hiệu ứng':'Đang chờ giao diện App');
+ $('#boot-status').textContent=ready?'Giao diện chính đã sẵn sàng.':'Đang chờ giao diện App…';
+ $('#skip').hidden=false;
+ if(!ready)waitForReadiness();
  if(cueMode){
   clearTimeout(flowTimer);const generation=++cueGeneration;
   void(async()=>{
@@ -116,7 +146,7 @@ function startBoot(){
  }
  if(startCinematic())return;
  const duration=5000;
- skipTimer=setTimeout(()=>{animationFinished=true;showWelcome();},state.config.accessibility.reducedMotion?500:duration);
+ skipTimer=setTimeout(()=>{animationFinished=true;$('#skip').hidden=true;showWelcome();},state.config.accessibility.reducedMotion?500:duration);
 }
 try{
  state=await api.bootstrap();ready=state.ready;muted=!state.config.splash.soundEnabled;const preset=state.config.presets.find(p=>p.id===state.config.selectedPreset)||state.config.presets[0],rg=state.config.rg;
@@ -150,8 +180,8 @@ try{
  const hasEventSources=Object.values(state.cueAudioUrls||{}).some(Boolean);
  cueMode=sao||(hasEventSources&&(rg.audioMode==='events'||rg.audioMode==='parallel'));
  trackMode=!sao&&(rg.audioMode==='track'||rg.audioMode==='parallel'||(!hasEventSources&&!!state.startupAudioUrl));
- if(cueMode||state.cueAudioUrls?.begin)cuePlayer=createCuePlayer({element:$('#cue-audio'),sources:state.cueAudioUrls,volume:state.config.splash.volume/100,muted,
-  onActivity:active=>{if(audio)audio.volume=state.config.splash.volume/100*(active ? 0.28 : 1);void api.voiceActivity(active).catch(()=>{});},
+ if(cueMode||state.cueAudioUrls?.begin||state.cueAudioUrls?.enter)cuePlayer=createCuePlayer({element:$('#cue-audio'),sources:state.cueAudioUrls,volume:state.config.splash.volume/100,muted,
+  onActivity:active=>{const parallelEntry=finishing&&['gundam','focus'].includes(preset.family);if(audio&&!parallelEntry)audio.volume=state.config.splash.volume/100*(active ? 0.28 : 1);void api.voiceActivity(parallelEntry?false:active).catch(()=>{});},
   onStatus:(event,result)=>{const labels={begin:'Bắt đầu',verifying:'Chờ xác minh',authenticated:'Xác thực thành công',welcome:'Chào mừng',enter:'Vào Antigravity',shutdown:'Kết thúc phiên'};audioStatus(result==='playing'?`Đang phát: ${labels[event]}`:result==='error'||result==='timeout'?`Không phát được cue: ${labels[event]}`:result==='interrupted'||result==='muted'||result==='disposed'?`Đã dừng: ${labels[event]}`:`Đã phát: ${labels[event]}`);}});
 document.body.classList.toggle('rg-system',false);document.body.dataset.phase='consent';
  const reduced=state.config.accessibility.reducedMotion||matchMedia('(prefers-reduced-motion: reduce)').matches||(sao&&!preset.motion);
@@ -191,10 +221,11 @@ document.body.classList.toggle('rg-system',false);document.body.dataset.phase='c
  };
  $('#skip').onclick=()=>{cueGeneration++;cuePlayer?.stop();cinematicFinished=true;stopCinematic();audioStatus('Đã bỏ qua âm khởi động');clearTimeout(skipTimer);animationFinished=true;$('#skip').hidden=true;showWelcome();};
  $('#enter-system').onclick=enterSystem;
+ $('#retry-ready').onclick=async()=>{const button=$('#retry-ready');button.disabled=true;try{await refreshReadiness();if(!ready)status('Chưa nhận được tín hiệu sẵn sàng. Bạn vẫn có thể mở giao diện App.');}finally{button.disabled=false;}};
  if(state.preview)document.addEventListener('keydown',event=>{
   if(event.key==='Escape'){event.preventDefault();void api.dismissPreview().catch(error=>status(error.message));}
  });
- api.onReady(value=>{ready=value;if(bootStarted){$('#boot-status').textContent='Giao diện chính đã sẵn sàng.';rgStatus('CORE ONLINE');showWelcome();}});
+ api.onReady(acceptReady);
  document.addEventListener('keydown',event=>{
   if(event.key==='Enter'){
    if(!$('#consent').hidden){event.preventDefault();$('#begin').click();}
@@ -227,6 +258,6 @@ document.body.classList.toggle('rg-system',false);document.body.dataset.phase='c
 
  if(state.authenticated)startBoot();else{$('#begin').focus();if(state.config.voice.enabled&&!state.preview&&!cueMode){announcer=createAnnouncer(new URL('./audio/',import.meta.url),state.config.voice);const volume=audio?.volume;if(audio)audio.volume=volume*.28;void api.voiceActivity(true);announcer.playSequence(['welcome','prompt']).catch(()=>{}).finally(()=>{if(audio)audio.volume=volume;return api.voiceActivity(!!cinematic&&!cinematic.paused).catch(()=>{});});}}
  $('#sound-toggle').hidden=!rgActive&&!sao&&!state.audioUrl;$('#sound-toggle').onclick=()=>{muted=!muted;cuePlayer?.setMuted(muted);void api.muteSound(muted).catch(()=>{});if(audio)audio.muted=muted;if(cinematic)cinematic.muted=muted;if(muted)announcer?.stop();audioStatus(muted?'Âm thanh đang tắt':`${modeLabel} · đã bật`);$('#sound-toggle').textContent=muted?'Bật âm thanh':'Tắt âm thanh';$('#sound-toggle').setAttribute('aria-pressed',String(muted));};
- window.addEventListener('pagehide',()=>{cueGeneration++;cuePlayer?.dispose();removeMotion();clearTimeout(flowTimer);clearTimeout(skipTimer);stopCinematic();audio?.pause();announcer?.stop();});
+ window.addEventListener('pagehide',()=>{stopReadinessWait();cueGeneration++;cuePlayer?.dispose();removeMotion();clearTimeout(flowTimer);clearTimeout(skipTimer);stopCinematic();audio?.pause();announcer?.stop();});
  }
 }catch(e){status('Không thể tải cấu hình tùy biến.');$('#consent .description').textContent=e.message;$('#begin').disabled=true;}

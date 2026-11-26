@@ -19,6 +19,8 @@ mod tests {
         assert_eq!(cfg.rg.audio_mode, "track");
         assert_eq!(cfg.rg.cinematic_mode, "quick");
         assert!(cfg.rg.cue_audio_ids.is_empty());
+        assert_eq!(cfg.splash.display_name, "Pilot");
+        assert_eq!(cfg.rg.operator_name, "Pilot");
 
         let json = serde_json::to_string(&cfg).unwrap();
         assert!(json.contains("cueAudioIds"));

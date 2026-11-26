@@ -5,6 +5,7 @@ const {createSettings}=require('./settings.cjs');
 const {createMusic}=require('./music.cjs');
 const {themeAudio}=require('./core/theme-audio.cjs');
 const {attachSessionClose}=require('./core/shutdown.cjs');
+const {probeHubReady,canRevealApp}=require('./core/readiness.cjs');
 if(!app.isReady())protocol.registerSchemesAsPrivileged([{scheme:'agc-asset',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 const shutdownWindows=new WeakSet();
 const screens=new Map();let servicePromise,registered=false;
@@ -20,12 +21,13 @@ async function service(){
 }
 function register(){
  if(registered)return;registered=true;
- for(const method of ['bootstrap','authenticate','finish','dismiss-preview','mute-sound','voice-activity'])ipcMain.handle(`agc-native:splash:${method}`,async(event,arg)=>{
+ for(const method of ['bootstrap','authenticate','readiness','finish','dismiss-preview','mute-sound','voice-activity'])ipcMain.handle(`agc-native:splash:${method}`,async(event,arg)=>{
   try{
    const state=screens.get(event.sender.id);if(!state||event.senderFrame!==event.sender.mainFrame||event.senderFrame.url!==pathToFileURL(path.join(__dirname,'splash.html')).href)throw new Error('Nguồn xác thực không hợp lệ.');
    const s=await service();
    if(method==='mute-sound'){s.music.setMuted(event.sender.id,arg===true);return{ok:true,value:true};}
    if(method==='voice-activity'){s.music.setDuck(event.sender.id,arg===true);return{ok:true,value:true};}
+   if(method==='readiness'){await state.checkReady?.();return{ok:true,value:{ready:state.ready,readinessError:state.readinessError||''}};}
    if(method==='bootstrap')return{ok:true,value:{config:s.config,quota:getLiveQuota(s.config.quota),...s.resolveAudio(s.config),startupAudioUrl:s.assetUrl(s.config.rg.startupAudioId),closing:!!state.closing,configured:(await s.security.status()).configured,authenticated:state.authenticated||state.reusedSession,ready:state.ready,preview:!!state.preview,readinessError:state.readinessError||'',version:'0.5.0'}};
    if(method==='dismiss-preview'){
     if(!state.preview)throw new Error('Thao tác chỉ dùng trong màn xem trước.');
@@ -37,8 +39,7 @@ function register(){
     else{if(arg?.password!==arg?.confirmation)throw new Error('Hai mật khẩu chưa khớp.');await s.security.setup(arg?.password);}
     state.authenticated=true;return{ok:true,value:{authenticated:true,ready:state.ready}};
    }
-   s.security.require();if(!state.authenticated&&!state.reusedSession)throw new Error('Chưa xác thực splash.');
-   if(!state.ready)return{ok:true,value:{finished:false,waiting:true}};
+   s.security.require();if(!canRevealApp(state,arg))return{ok:true,value:{finished:false,waiting:true}};
    setImmediate(()=>state.release());return{ok:true,value:{finished:true}};
   }catch(e){return{ok:false,error:e.message};}
  });
@@ -86,10 +87,11 @@ function create({getHubWebContents,getHubView}){
    try{await updateRuntime();if(afterUnlock)await afterUnlock();}catch{/* Keep the authenticated App usable if its custom panel fails. */}};
   let checking=false;
   async function checkReady(){if(checking||state.disposed||hub.isDestroyed())return;checking=true;try{
-   const ready=await hub.executeJavaScript('Boolean(document.querySelector("#root")?.childElementCount && (document.querySelector("[contenteditable=\\"true\\"],textarea") || document.querySelectorAll("button").length > 6))');
+   const ready=await probeHubReady(hub);state.readinessError='';
    if(ready){state.ready=true;clearInterval(poll);if(!view.webContents.isDestroyed())view.webContents.send('agc-native:splash:ready',true);}
   }catch(e){state.readinessError=e.message;}finally{checking=false;}}
-  hub.on('did-finish-load',checkReady);poll=setInterval(checkReady,250);
+  state.checkReady=checkReady;
+  if(!options.preview&&!options.closing){hub.on('did-finish-load',checkReady);poll=setInterval(checkReady,750);void checkReady();}
   void(async()=>{const s=await service();state.reusedSession=s.security.isUnlocked();if(!options.preview&&!options.closing){
    if(!shutdownWindows.has(win)){shutdownWindows.add(win);attachSessionClose({win,getConfig:()=>s.config,stopAudio:()=>s.music.stop(),createEnding:()=>{dispose();manager?.hide();return attachLoadingOverlay(win,foregroundColor,backgroundColor,undefined,{closing:true});}});}
    s.windows.add(win);await s.music.update(s.config);manager=createSettings({win,hub,manifest:s.manifest,security:s.security,store:s.store,dataDirectory:s.dataDirectory,executable:process.execPath,getConfig:()=>s.config,setConfig:value=>s.config=value,updateRuntime,removeRuntime,music:s.music,getHubBounds:()=>getHubView?.(win)?.getBounds?.()||{x:0,y:0},preview:()=>attachLoadingOverlay(win,foregroundColor,backgroundColor,undefined,{preview:true,onReturn:()=>manager.focus()})});}})();

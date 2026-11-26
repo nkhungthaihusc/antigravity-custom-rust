@@ -192,7 +192,7 @@ pub fn default_config() -> AppConfig {
         splash: SplashConfig {
             enabled: true,
             duration_ms: 3200,
-            display_name: "Thái Nguyễn".into(),
+            display_name: "Pilot".into(),
             media_id: "".into(),
             volume: 25,
             audio_id: "".into(),
@@ -216,7 +216,7 @@ pub fn default_config() -> AppConfig {
         rg: RgConfig {
             enabled: true,
             color: "#22d3ee".into(),
-            operator_name: "Thái Nguyễn".into(),
+            operator_name: "Pilot".into(),
             unit_name: "WHITE GUNDAM".into(),
             model_name: "RG-01".into(),
             operator_class: "OPERATOR".into(),

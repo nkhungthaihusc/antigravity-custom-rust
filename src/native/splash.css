@@ -572,9 +572,17 @@ section#boot {
 .orbit-bracket.b-left { left: -14px; border-width: 2px 0 2px 2px; }
 .orbit-bracket.b-right { right: -14px; border-width: 2px 2px 2px 0; }
 
-#skip,
 .skip-btn {
-    display: none !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px auto 0;
+    padding: 9px 14px;
+    background: #101b2580;
+    border: 1px solid #8ca3b466;
+    border-radius: 3px;
+    color: #d5e0e8;
+    font-size: 12px;
 }
 
 .skip-btn:hover {

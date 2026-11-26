@@ -8,6 +8,7 @@ use agc_core::security::{SecurityManager, SecurityStatus};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
+mod native_runtime;
 
 struct AppState {
     data_dir: PathBuf,
@@ -28,9 +29,11 @@ fn detect_antigravity_executable() -> Option<String> {
 }
 
 fn native_command(action: &str, data_dir: Option<&std::path::Path>) -> Result<std::process::Output, String> {
-    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
-    let mut command = std::process::Command::new("node");
-    command.arg(project.join("scripts/native-install.cjs")).arg(action);
+    let runtime = native_runtime::current()?;
+    let mut command = std::process::Command::new(&runtime.node);
+    command.current_dir(&runtime.root)
+        .env_remove("NODE_OPTIONS").env_remove("NODE_PATH").env_remove("ELECTRON_RUN_AS_NODE")
+        .arg(runtime.root.join("scripts/native-install.cjs")).arg(action);
     if let Some(directory) = data_dir { command.env("AGC_DATA_DIRECTORY", directory); }
     #[cfg(windows)] {
         use std::os::windows::process::CommandExt;
@@ -172,6 +175,15 @@ fn native_uninstall(state: State<AppState>) -> Result<serde_json::Value, String>
 }
 
 fn main() {
+    // Read-only release diagnostic; never loads credentials or installs anything.
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--check-package")) {
+        let result = match native_runtime::current() {
+            Ok(_) => serde_json::json!({"packageReady":true,"nativeStatus":native_status()}),
+            Err(error) => serde_json::json!({"packageReady":false,"error":error}),
+        };
+        println!("{}", result);
+        std::process::exit(if result["packageReady"] == true && result["nativeStatus"]["error"].is_null() { 0 } else { 1 });
+    }
     let data_dir = get_data_dir().expect("Không thể mở thư mục dữ liệu dùng chung với Antigravity");
     let security = Mutex::new(SecurityManager::new(&data_dir));
 

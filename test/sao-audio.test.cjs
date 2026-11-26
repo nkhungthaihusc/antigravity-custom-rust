@@ -69,6 +69,16 @@ test('GP Base is a distinct begin cue, independent of startup track mode and abs
  assert.equal(resolve(normalizeConfig({selectedPreset:'sao-aincrad'})).cueAudioUrls.begin,'');
 });
 
+test('Gundam entry uses the bundled battle cue in track mode and preserves private overrides',()=>{
+ const id='abcdef12-abcd-abcd-abcd-abcdef123456.mp3';
+ for(const selected of ['sao','gundam','focus','paper']){
+  const c=normalizeConfig({selectedPreset:selected,rg:{audioMode:'track'}});
+  assert.equal(resolve(c).cueAudioUrls.enter,'bundled:gundam-battle-start.mp3');
+  c.rg.cueAudioIds.enter=id;assert.equal(resolve(c).cueAudioUrls.enter,`private:${id}`);
+ }
+ assert.equal(resolve(normalizeConfig({selectedPreset:'sao-aincrad'})).cueAudioUrls.enter,'');
+});
+
 test('legacy session scope cannot create a music player inside the App',async()=>{
  const vm=require('node:vm');let created=0;const listeners=new Map();
  const source=await fs.readFile(path.resolve(__dirname,'../src/native/music.cjs'),'utf8');

@@ -112,4 +112,14 @@ Production native mode uses webContents.debugger internally. The management prog
 
 ## Limits
 
+Source recovery (2026-11-26): see [SOURCE-RECOVERY.md](SOURCE-RECOVERY.md) for
+provenance and limits. Recovered native/core/renderer/media come from the
+checksum-verified v0.5.0 portable ZIP; Rust and packaging changes were reconstructed
+from the recorded patches. The reconstructed release build passed, along with
+44-file JavaScript syntax checking, 33 Node tests, 10 core Rust tests, one
+release-mode launcher Rust test and the Edge UI fixture (including readiness
+fallback and the 2.3-second Gundam entry cue). Live App 2.35.1 was returned to its
+original ASAR hash on request; the Google executable was unchanged. This recovery
+does not claim byte-identical Rust source or a newly tested authenticated App flow.
+
 This validates the inspected Windows App version and the exercised startup/Settings routes. It does not guarantee future App compatibility, full replacement of Google's internal theme system or IDE editor wallpaper. The existing model-loading connectivity error is outside this project's scope. The gate protects startup UI, not agent services, disk data or a Windows account from its owner.

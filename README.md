@@ -24,6 +24,9 @@ Phiên bản hiện tại: **0.5.0**. Dự án cộng đồng độc lập, khô
 | SAO | Swordland — Yuki Kajiura | Xác minh mật khẩu; Link Start phát sau xác thực thành công | Màn kết thúc không âm thanh |
 
 Nhạc dừng khi vào giao diện chính của App. Cue làm hạ nhạc nền trong lúc phát.
+Riêng nút **Bắt đầu** sau xác thực của Gundam/Focus phát câu chiến đấu 2,3 giây,
+nhỏ dần từ giây 1,3 đến hết; nhạc nền giữ nguyên âm lượng và chạy song song.
+Splash đợi đoạn này kết thúc rồi mới vào App; tắt tiếng vẫn vào bình thường.
 Gundam dùng đúng bản nhạc nền gần 5 phút; đoạn GP Base được cắt riêng, không phát
 nguyên startup track 46 giây. Cả ba biến thể Gundam/Focus hỗ trợ màn kết thúc,
 kể cả khi đóng ngay tại splash trước đăng nhập.
@@ -34,16 +37,17 @@ cấu hình splash, âm lượng, nhạc hay cue của Gundam.
 
 ## Yêu cầu
 
-### Để dùng bản đã build trong checkout này
+### Để dùng bản ZIP phát hành
 
 - Windows x64 và Microsoft Edge WebView2 Runtime.
 - Antigravity **App 2.35.1 hoặc 2.34.0** có checksum nằm trong danh sách hỗ trợ.
-- Node.js để launcher gọi bộ cài, cập nhật, kiểm tra và gỡ tích hợp native.
-- Giữ source và scripts của checkout tại vị trí đã build launcher.
+- Giải nén toàn bộ ZIP; giữ thư mục `runtime` cạnh `Antigravity Custom.exe`.
 
-**Bản hiện tại chưa phải gói cài portable hoàn toàn.** Giao diện được nhúng trong
-EXE, nhưng các thao tác quản lý native vẫn gọi scripts từ đường dẫn checkout
-được ghi khi build. Nếu chuyển project sang vị trí khác, cần build lại launcher.
+Gói ZIP đã kèm Node runtime, bộ cài native và toàn bộ tài nguyên theme.
+Người dùng không cần clone source, cài Node.js, npm, Rust hoặc Cargo. Bản release
+không tìm script theo đường dẫn máy build và không dùng Node từ PATH.
+Không chép riêng EXE hoặc chạy EXE ngay trong ZIP. Gói không kèm Antigravity App.
+Xem [hướng dẫn portable](docs/PORTABLE.md).
 
 Dự án nhắm tới **Antigravity App**; không dùng VSIX để tích hợp vào Antigravity IDE.
 
@@ -56,7 +60,7 @@ không yêu cầu npm install để chạy các script kiểm tra.
 ## Bắt đầu sử dụng
 
 1. Đóng Antigravity App trước khi cài hoặc cập nhật tích hợp.
-2. Mở **release/Antigravity Custom.exe**.
+2. Giải nén bản phát hành rồi mở **Antigravity Custom.exe** trong thư mục vừa giải nén.
 3. Đăng nhập bằng mật khẩu hiện có, hoặc tạo mật khẩu lần đầu từ 8 ký tự.
 4. Chọn theme trong **Chủ đề & Màu sắc** và dùng **Xem splash** để kiểm tra.
 5. Bấm **Mở Antigravity**. Launcher kiểm tra native và cài/cập nhật nếu cần.
@@ -90,12 +94,25 @@ npm start
 npm run build
 npm run build:cli
 
-# Đưa launcher release vào thư mục phân phối
-New-Item -ItemType Directory -Force release | Out-Null
+# Build và tạo ZIP portable (tải Node chính thức ở lần đầu, kiểm tra SHA-256)
 npm run package
 ```
 
 Các cache target được tạo lại ở lần build đầu sau khi dọn project.
+
+`npm run package` tạo `release/Antigravity-Custom-0.5.0-win-x64.zip` và file
+`.zip.sha256`. Bên trong có launcher, `runtime`, hướng dẫn và hash từng file.
+Bộ đóng gói dùng danh sách tài nguyên cho phép, không chép profile, mật khẩu,
+cache, file Google hay backup từ máy phát hành. Thư mục staging/cache nằm trong
+`work/`. Chỉ upload ZIP cùng `.sha256` lên GitHub Releases; EXE rời không đủ.
+
+Để kiểm tra một ZIP sau khi di chuyển, chạy launcher với `--check-package`.
+Chế độ này chỉ đọc trạng thái native, không mở phiên hoặc cài/gỡ. Trong debug,
+`npm start` vẫn dùng source và Node trên máy phát triển.
+
+`npm run verify:portable` kiểm tra ZIP mới nhất bằng cách giải nén vào `work/`,
+loại Node khỏi PATH và thử bộ cài/gỡ trên bản sao App được hỗ trợ đã có trên máy
+phát triển. Báo cáo ghi ở `work/portable-verification.json`; không thay đổi App thật.
 
 ### Kiểm tra media đã cài
 
@@ -185,6 +202,13 @@ mật khẩu mới trong profile chung.
   phiên bản đã nhận diện, với bản sao lưu phục vụ khôi phục.
 
 ## Tình trạng tương thích
+
+Nếu splash dừng ở **Ready to Focus** sau khi xác nhận mật khẩu, nó đang chờ
+giao diện App. Quota không phải điều kiện chuyển màn. Native nhận diện App đã
+dựng giao diện kể cả khi đang hiện lỗi mạng; mỗi lần kiểm tra có giới hạn thời gian.
+Sau 15 giây chưa nhận được tín hiệu, chọn **Vào giao diện App** để xem trạng thái
+thật bên trong, hoặc **Kiểm tra lại giao diện App**. Các nút này vẫn yêu cầu đã
+xác thực và không sửa lỗi mạng/model của App.
 
 | Phạm vi | Đã kiểm tra |
 | --- | --- |
