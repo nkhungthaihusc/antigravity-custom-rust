@@ -6,10 +6,19 @@ use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiveQuota {
+    pub plan: String,
     pub gemini5h: u32,
     pub geminiWeek: u32,
+    #[serde(rename = "gemini5hResetAt", skip_serializing_if = "Option::is_none")]
+    pub gemini_5h_reset_at: Option<u64>,
+    #[serde(rename = "geminiWeekResetAt", skip_serializing_if = "Option::is_none")]
+    pub gemini_week_reset_at: Option<u64>,
     pub codex5h: u32,
     pub codexWeek: u32,
+    #[serde(rename = "codex5hResetAt", skip_serializing_if = "Option::is_none")]
+    pub codex_5h_reset_at: Option<u64>,
+    #[serde(rename = "codexWeekResetAt", skip_serializing_if = "Option::is_none")]
+    pub codex_week_reset_at: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,7 +83,14 @@ fn walk_sessions(dir: &Path, acc: &mut Vec<(PathBuf, SystemTime)>) {
     }
 }
 
-pub fn read_codex_quota() -> Option<(u32, u32)> {
+pub struct CodexLimits {
+    pub codex5h: u32,
+    pub codex_week: u32,
+    pub codex_5h_reset_at: Option<u64>,
+    pub codex_week_reset_at: Option<u64>,
+}
+
+pub fn read_codex_quota_full() -> Option<CodexLimits> {
     let home = directories::BaseDirs::new()?.home_dir().to_path_buf();
     let sessions_dir = home.join(".codex").join("sessions");
     let files = find_newest_session_files(&sessions_dir, 8);
@@ -99,7 +115,12 @@ pub fn read_codex_quota() -> Option<(u32, u32)> {
                         let c5 = calc_remaining(&limits.primary, now_sec);
                         let cw = calc_remaining(&limits.secondary, now_sec);
                         if c5.is_some() || cw.is_some() {
-                            return Some((c5.unwrap_or(100), cw.unwrap_or(100)));
+                            return Some(CodexLimits {
+                                codex5h: c5.unwrap_or(100),
+                                codex_week: cw.unwrap_or(100),
+                                codex_5h_reset_at: limits.primary.and_then(|b| b.resets_at),
+                                codex_week_reset_at: limits.secondary.and_then(|b| b.resets_at),
+                            });
                         }
                     }
                 }
@@ -109,12 +130,26 @@ pub fn read_codex_quota() -> Option<(u32, u32)> {
     None
 }
 
+pub fn read_codex_quota() -> Option<(u32, u32)> {
+    read_codex_quota_full().map(|l| (l.codex5h, l.codex_week))
+}
+
 pub fn get_live_quota() -> LiveQuota {
-    let (codex5h, codex_week) = read_codex_quota().unwrap_or((100, 100));
+    let codex = read_codex_quota_full();
+    let now_sec = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
     LiveQuota {
-        gemini5h: 99,
-        geminiWeek: 100,
-        codex5h,
-        codexWeek: codex_week,
+        plan: "Google AI Pro".into(),
+        gemini5h: 83,
+        geminiWeek: 71,
+        gemini_5h_reset_at: Some(now_sec + 5640),
+        gemini_week_reset_at: Some(now_sec + 514800),
+        codex5h: codex.as_ref().map(|c| c.codex5h).unwrap_or(100),
+        codexWeek: codex.as_ref().map(|c| c.codex_week).unwrap_or(100),
+        codex_5h_reset_at: codex.as_ref().and_then(|c| c.codex_5h_reset_at),
+        codex_week_reset_at: codex.as_ref().and_then(|c| c.codex_week_reset_at),
     }
 }

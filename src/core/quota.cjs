@@ -71,14 +71,41 @@ function readCodexQuota() {
   return null;
 }
 
+function formatRemaining(resetsAtSec, currentPercent) {
+  if (currentPercent !== undefined && currentPercent >= 100) return 'Ready';
+  if (!resetsAtSec) return 'Chưa có API';
+  const now = Math.floor(Date.now() / 1000);
+  const diff = resetsAtSec - now;
+  if (diff <= 0) return 'Ready';
+  const days = Math.floor(diff / 86400);
+  const hours = Math.floor((diff % 86400) / 3600);
+  const mins = Math.floor((diff % 3600) / 60);
+  const secs = Math.floor(diff % 60);
+  const padSec = secs < 10 ? '0' + secs : secs;
+  if (days > 0) return `${days}d ${hours}h ${mins}m ${padSec}s`;
+  if (hours > 0) return `${hours}h ${mins}m ${padSec}s`;
+  return `${mins}m ${padSec}s`;
+}
+
 function getLiveQuota(configQuota = {}) {
   const codex = readCodexQuota();
+
+  const g5h = typeof configQuota.gemini5h === 'number' ? configQuota.gemini5h : null;
+  const gWk = typeof configQuota.geminiWeek === 'number' ? configQuota.geminiWeek : null;
+  const c5h = codex ? codex.codex5h : (typeof configQuota.codex5h === 'number' ? configQuota.codex5h : null);
+  const cWk = codex ? codex.codexWeek : (typeof configQuota.codexWeek === 'number' ? configQuota.codexWeek : null);
+
   return {
-    gemini5h: typeof configQuota.gemini5h === 'number' ? configQuota.gemini5h : 99,
-    geminiWeek: typeof configQuota.geminiWeek === 'number' ? configQuota.geminiWeek : 100,
-    codex5h: codex ? codex.codex5h : (typeof configQuota.codex5h === 'number' ? configQuota.codex5h : 100),
-    codexWeek: codex ? codex.codexWeek : (typeof configQuota.codexWeek === 'number' ? configQuota.codexWeek : 100)
+    plan: configQuota.plan || 'Google AI Pro',
+    gemini5h: g5h,
+    geminiWeek: gWk,
+    gemini5hResetAt: configQuota.gemini5hResetAt || null,
+    geminiWeekResetAt: configQuota.geminiWeekResetAt || null,
+    codex5h: c5h,
+    codexWeek: cWk,
+    codex5hResetAt: codex?.codex5hResetAt || configQuota.codex5hResetAt || null,
+    codexWeekResetAt: codex?.codexWeekResetAt || configQuota.codexWeekResetAt || null
   };
 }
 
-module.exports = { readCodexQuota, getLiveQuota };
+module.exports = { readCodexQuota, getLiveQuota, formatRemaining };

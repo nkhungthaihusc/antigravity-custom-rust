@@ -6,7 +6,7 @@ const {createMusic}=require('./music.cjs');
 const {themeAudio}=require('./core/theme-audio.cjs');
 const {attachSessionClose}=require('./core/shutdown.cjs');
 const {probeHubReady,canRevealApp}=require('./core/readiness.cjs');
-if(!app.isReady())protocol.registerSchemesAsPrivileged([{scheme:'agc-asset',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
+if(!app.isReady())protocol.registerSchemesAsPrivileged([{scheme:'agc-asset',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,bypassCSP:true}}]);
 const shutdownWindows=new WeakSet();
 const screens=new Map();let servicePromise,registered=false;
 async function service(){
@@ -14,7 +14,8 @@ async function service(){
   const manifest=JSON.parse(await fs.readFile(path.join(__dirname,'install.json'),'utf8'));if(manifest.product!=='antigravity-custom-native'||!path.isAbsolute(manifest.dataDirectory))throw new Error('Manifest tùy biến không hợp lệ.');
   const store=new ConfigStore(manifest.dataDirectory,normalizeConfig),config=await store.load(),security=new Security(manifest.dataDirectory);
   const assetUrl=id=>mediaId(id)?pathToFileURL(path.join(manifest.dataDirectory,'assets',id)).href:'';
-  protocol.handle('agc-asset',async request=>{try{const url=new URL(request.url),file=assetUrl(url.pathname.slice(1));if(url.hostname!=='local'||!file)return new Response(null,{status:403});return net.fetch(file);}catch{return new Response(null,{status:404});}});
+  const resolveBundled=async id=>{const list=id==='bundled-sao.mp4'?[path.join(__dirname,'renderer','sao.mp4'),path.join(__dirname,'sao.mp4')]:[path.join(__dirname,'white-gundam.mp4'),path.join(__dirname,'renderer','white-gundam.mp4')];for(const p of list){try{if((await fs.stat(p)).isFile())return pathToFileURL(p).href;}catch{}}return'';};
+  protocol.handle('agc-asset',async request=>{try{const url=new URL(request.url),id=url.pathname.slice(1),file=(id==='bundled-gundam.mp4'||id==='bundled-sao.mp4')?await resolveBundled(id):assetUrl(id);if(url.hostname!=='local'||!file)return new Response(null,{status:403});return net.fetch(file,{headers:request.headers});}catch{return new Response(null,{status:404});}});
   const resolveAudio=value=>themeAudio(value,{assetUrl,bundledUrl:name=>pathToFileURL(path.join(__dirname,'renderer','audio',name)).href});
   return {manifest,store,config,security,assetUrl,resolveAudio,dataDirectory:manifest.dataDirectory,music:createMusic(value=>resolveAudio(value).audioUrl),windows:new Set()};
  })();return servicePromise;
@@ -67,6 +68,7 @@ function create({getHubWebContents,getHubView}){
      let command;try{command=JSON.parse(params.payload);
       if(command.type==='settings-tab-close'){manager.hide();return;}
       if(command.type==='settings-tab-bounds'){manager.updateBounds(command.bounds);return;}
+      if(command.type==='quota-refresh'){await updateRuntime();return;}
       if(command.type==='quota-update'&&command.quota){const q={...(s.config.quota||{}),...command.quota};s.config.quota=q;try{s.security.require();s.config=await s.store.save({...s.config,quota:q});}catch{}return;}
       s.security.require();
       if(command.type==='settings-tab-open')await manager.show({embedded:true,bounds:command.bounds});
@@ -76,10 +78,54 @@ function create({getHubWebContents,getHubView}){
      }catch(e){if(e.message?.includes('Phiên đã khóa'))attachLoadingOverlay(win,foregroundColor,backgroundColor,()=>manager.show({embedded:command?.type==='settings-tab-open',bounds:command?.bounds}));}
     })();};hub.debugger.on('message',debugListener);
    }
-   let wallpaperData='';const id=s.config.wallpaper.mediaId;
-   if(mediaId(id)&&/\.(png|jpe?g|webp|gif)$/i.test(id)){try{const file=path.join(s.dataDirectory,'assets',id),stat=await fs.stat(file);if(stat.size<=8*1024*1024){const ext=path.extname(id).slice(1);wallpaperData=`data:image/${ext==='jpg'?'jpeg':ext};base64,${(await fs.readFile(file)).toString('base64')}`;}}catch{}}
-   if(!wallpaperData){try{const sao=s.config.presets.find(p=>p.id===s.config.selectedPreset)?.family==='sao',file=path.join(__dirname,sao?'renderer/sao-poster.jpg':'white-gundam.png'),stat=await fs.stat(file);if(stat.size<=8*1024*1024)wallpaperData=`data:image/${sao?'jpeg':'png'};base64,${(await fs.readFile(file)).toString('base64')}`;}catch{}}
-   const data={native:true,origin:url.origin,preset:s.config.presets.find(p=>p.id===s.config.selectedPreset),presets:s.config.presets,wallpaper:s.config.wallpaper,wallpaperData,quota:getLiveQuota(s.config.quota)};
+   const w = s.config.wallpaper || {};
+   const isVideoMode = w.mode === 'video';
+   const sao = s.config.presets.find(p => p.id === s.config.selectedPreset)?.family === 'sao';
+   let wallpaperIsVideo = isVideoMode;
+   let wallpaperVideoUrl = '';
+   let wallpaperData = '';
+   if (isVideoMode) {
+     const vidId = w.videoMediaId || (/\.(mp4|webm)$/i.test(w.mediaId) ? w.mediaId : '');
+     if (mediaId(vidId)) {
+       try {
+         const file = path.join(s.dataDirectory, 'assets', vidId);
+         const stat = await fs.stat(file);
+         if (stat.isFile()) wallpaperVideoUrl = `agc-asset://local/${vidId}`;
+       } catch {}
+     }
+     if (!wallpaperVideoUrl) {
+       wallpaperVideoUrl = `agc-asset://local/${sao ? 'bundled-sao.mp4' : 'bundled-gundam.mp4'}`;
+     }
+   }
+   const imgId = w.imageMediaId || (!/\.(mp4|webm)$/i.test(w.mediaId) ? w.mediaId : '');
+   if (mediaId(imgId) && /\.(png|jpe?g|webp|gif)$/i.test(imgId)) {
+     try {
+       const file = path.join(s.dataDirectory, 'assets', imgId);
+       const stat = await fs.stat(file);
+       if (stat.size <= 25 * 1024 * 1024) {
+         const ext = path.extname(imgId).slice(1);
+         wallpaperData = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${(await fs.readFile(file)).toString('base64')}`;
+       }
+     } catch {}
+   }
+   if (!wallpaperData) {
+     try {
+       const file = path.join(__dirname, sao ? 'renderer/sao-poster.jpg' : 'white-gundam.png');
+       const stat = await fs.stat(file);
+       if (stat.size <= 8 * 1024 * 1024) wallpaperData = `data:image/${sao ? 'jpeg' : 'png'};base64,${(await fs.readFile(file)).toString('base64')}`;
+     } catch {}
+   }
+   const data = {
+     native: true,
+     origin: url.origin,
+     preset: s.config.presets.find(p => p.id === s.config.selectedPreset),
+     presets: s.config.presets,
+     wallpaper: s.config.wallpaper,
+     wallpaperIsVideo,
+     wallpaperVideoUrl,
+     wallpaperData,
+     quota: getLiveQuota(s.config.quota)
+   };
    const source=await fs.readFile(path.join(__dirname,'runtime.js'),'utf8');await hub.executeJavaScript(`(${source})(${JSON.stringify(data)})`);
   }
   const dispose=()=>{if(state.disposed)return;state.disposed=true;clearInterval(poll);win.off('resize',resize);hub.off('did-finish-load',checkReady);if(!win.isDestroyed()){try{win.contentView.removeChildView(view);}catch{}}if(!view.webContents.isDestroyed())view.webContents.close();};

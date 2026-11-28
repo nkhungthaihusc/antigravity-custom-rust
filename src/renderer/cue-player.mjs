@@ -1,5 +1,5 @@
 // Playback is a consequence of app state, never a source of authorization.
-export function createCuePlayer({element,sources={},volume=.25,muted=false,onActivity=()=>{},onStatus=()=>{},timeoutMs=15000}){
+export function createCuePlayer({element,sources={},volume=.25,muted=false,onActivity=()=>{},onStatus=()=>{},timeoutMs=15000} = {}){
  let active=null,disposed=false,generation=0;
  function stop(reason='interrupted'){
   generation++;const previous=active;active=null;
@@ -7,7 +7,7 @@ export function createCuePlayer({element,sources={},volume=.25,muted=false,onAct
  }
  function play(event){
   stop();if(disposed)return Promise.resolve('disposed');
-  if(!Object.hasOwn(sources,event)||!sources[event])return Promise.resolve('missing');
+  if(!sources || typeof sources !== 'object' || !Object.hasOwn(sources,event)||!sources[event])return Promise.resolve('missing');
   if(muted)return Promise.resolve('muted');
   const token=generation;return new Promise(resolve=>{
    active={event,resolve,timer:null};if(element.dataset)element.dataset.event=event;element.src=sources[event];element.loop=false;element.volume=Math.max(0,Math.min(1,volume));element.muted=false;

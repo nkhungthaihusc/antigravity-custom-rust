@@ -3,7 +3,7 @@ function themeAudio(config,{assetUrl,bundledUrl}){
  const family=config.presets.find(p=>p.id===config.selectedPreset)?.family,sao=family==='sao';
  const privateId=config.splash.themeAudioIds?.[family]||(!sao?config.splash.audioId:'');
  const music=privateId?assetUrl(privateId):sao?bundledUrl('swordland.mp3'):['gundam','focus'].includes(family)?bundledUrl('gundam-background.mp3'):'';
- const cues=Object.fromEntries(Object.entries(config.rg.cueAudioIds||{}).map(([event,id])=>[event,sao?'':assetUrl(id)]));
+ const cues=Object.fromEntries(Object.entries(config?.rg?.cueAudioIds||{}).map(([event,id])=>[event,sao?'':assetUrl(id)]));
  // Link Start belongs after successful authentication, never on each password attempt.
  if(sao)cues.authenticated=bundledUrl('sao-link-start.mp3');
  if(['gundam','focus'].includes(family)&&!cues.begin)cues.begin=bundledUrl('gundam-gp-base.mp3');

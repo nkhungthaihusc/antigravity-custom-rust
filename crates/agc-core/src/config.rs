@@ -45,8 +45,18 @@ pub struct WallpaperConfig {
     pub enabled: bool,
     #[serde(rename = "mediaId")]
     pub media_id: String,
+    #[serde(default = "default_wallpaper_mode")]
+    pub mode: String,
+    #[serde(rename = "imageMediaId", default)]
+    pub image_media_id: String,
+    #[serde(rename = "videoMediaId", default)]
+    pub video_media_id: String,
     pub opacity: u32,
     pub blur: u32,
+}
+
+fn default_wallpaper_mode() -> String {
+    "image".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +214,9 @@ pub fn default_config() -> AppConfig {
         wallpaper: WallpaperConfig {
             enabled: true,
             media_id: "".into(),
+            mode: "image".into(),
+            image_media_id: "".into(),
+            video_media_id: "".into(),
             opacity: 20,
             blur: 0,
         },

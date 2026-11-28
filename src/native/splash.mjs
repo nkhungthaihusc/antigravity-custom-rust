@@ -177,10 +177,10 @@ try{
   }
  }
  applyConfiguredUI();
- const hasEventSources=Object.values(state.cueAudioUrls||{}).some(Boolean);
+ const hasEventSources=Object.values(state?.cueAudioUrls||{}).some(Boolean);
  cueMode=sao||(hasEventSources&&(rg.audioMode==='events'||rg.audioMode==='parallel'));
  trackMode=!sao&&(rg.audioMode==='track'||rg.audioMode==='parallel'||(!hasEventSources&&!!state.startupAudioUrl));
- if(cueMode||state.cueAudioUrls?.begin||state.cueAudioUrls?.enter)cuePlayer=createCuePlayer({element:$('#cue-audio'),sources:state.cueAudioUrls,volume:state.config.splash.volume/100,muted,
+ if(cueMode||state?.cueAudioUrls?.begin||state?.cueAudioUrls?.enter)cuePlayer=createCuePlayer({element:$('#cue-audio'),sources:state?.cueAudioUrls||{},volume:state.config.splash.volume/100,muted,
   onActivity:active=>{const parallelEntry=finishing&&['gundam','focus'].includes(preset.family);if(audio&&!parallelEntry)audio.volume=state.config.splash.volume/100*(active ? 0.28 : 1);void api.voiceActivity(parallelEntry?false:active).catch(()=>{});},
   onStatus:(event,result)=>{const labels={begin:'Bắt đầu',verifying:'Chờ xác minh',authenticated:'Xác thực thành công',welcome:'Chào mừng',enter:'Vào Antigravity',shutdown:'Kết thúc phiên'};audioStatus(result==='playing'?`Đang phát: ${labels[event]}`:result==='error'||result==='timeout'?`Không phát được cue: ${labels[event]}`:result==='interrupted'||result==='muted'||result==='disposed'?`Đã dừng: ${labels[event]}`:`Đã phát: ${labels[event]}`);}});
 document.body.classList.toggle('rg-system',false);document.body.dataset.phase='consent';

@@ -13,7 +13,7 @@ function register(){
   }catch(e){return{ok:false,error:e.message};}
  });
 }
-function publicState(c){const config=c.getConfig();return{config,builtins:BUILTINS,appVersion:'0.4.2',hostMode:c.embedded?'native-settings-tab':'native',builtinAudioBase:pathToFileURL(path.join(__dirname,'audio')+path.sep).href,musicStatus:c.music.status,nativeStatus:{installed:true,appVersion:c.manifest.appVersion},integration:{state:'native',message:'Tích hợp trong Settings của App.'},assets:{splash:config.splash.mediaId?`agc-asset://local/${config.splash.mediaId}`:'',audio:config.splash.audioId?`agc-asset://local/${config.splash.audioId}`:'',wallpaper:config.wallpaper.mediaId?`agc-asset://local/${config.wallpaper.mediaId}`:''}};}
+function publicState(c){const config=c.getConfig();return{config,builtins:BUILTINS,appVersion:'0.5.0',hostMode:c.embedded?'native-settings-tab':'native',builtinAudioBase:pathToFileURL(path.join(__dirname,'audio')+path.sep).href,musicStatus:c.music.status,nativeStatus:{installed:true,appVersion:c.manifest.appVersion},integration:{state:'native',message:'Tích hợp trong Settings của App.'},assets:{splash:config.splash.mediaId?`agc-asset://local/${config.splash.mediaId}`:'',audio:config.splash.audioId?`agc-asset://local/${config.splash.audioId}`:'',wallpaper:config.wallpaper.mediaId?`agc-asset://local/${config.wallpaper.mediaId}`:'',wallpaperImage:config.wallpaper.imageMediaId?`agc-asset://local/${config.wallpaper.imageMediaId}`:'',wallpaperVideo:config.wallpaper.videoMediaId?`agc-asset://local/${config.wallpaper.videoMediaId}`:''}};}
 async function save(c,value){const config=await c.store.save(value);c.setConfig(config);await c.music.update(config);await c.updateRuntime();return publicState(c);}
 async function dispatch(c,name,arg){
  const config=c.getConfig();
@@ -41,13 +41,21 @@ async function dispatch(c,name,arg){
    return save(c,await importCueFolder(result.filePaths[0],path.join(c.dataDirectory,'assets'),config));
   }
   case'import-media':{
-   const extensions=['audio','startup-audio','end-audio'].includes(arg)?['mp3','wav','ogg','m4a']:arg==='wallpaper'?['png','jpg','jpeg','webp','gif']:arg==='splash'?['png','jpg','jpeg','webp','gif','mp4','webm']:null;
+   const extensions=['audio','startup-audio','end-audio'].includes(arg)?['mp3','wav','ogg','m4a']:arg==='wallpaper'?['png','jpg','jpeg','webp','gif','mp4','webm']:arg==='wallpaper-video'?['mp4','webm']:arg==='wallpaper-image'?['png','jpg','jpeg','webp','gif']:arg==='splash'?['png','jpg','jpeg','webp','gif','mp4','webm']:null;
    if(!extensions)throw new Error('Loại tài nguyên không hợp lệ.');
    const result=await dialog.showOpenDialog({title:'Chọn tài nguyên tùy biến',properties:['openFile'],filters:[{name:'Media',extensions}]});if(result.canceled)return null;
-   const file=result.filePaths[0],ext=path.extname(file).slice(1).toLowerCase(),stat=await fs.stat(file),limit=arg==='wallpaper'?8:100;
+   const file=result.filePaths[0],ext=path.extname(file).slice(1).toLowerCase(),stat=await fs.stat(file),limit=100;
    if(!extensions.includes(ext)||!stat.isFile()||stat.size>limit*1024*1024)throw new Error(`File không hợp lệ hoặc vượt quá ${limit} MB.`);
    const id=`${randomUUID()}.${ext}`;const folder=path.join(c.dataDirectory,'assets');await fs.mkdir(folder,{recursive:true});await fs.copyFile(file,path.join(folder,id));
-   const next=structuredClone(config);if(arg==='startup-audio')next.rg.startupAudioId=id;else if(arg==='end-audio')next.rg.endAudioId=id;else if(arg==='wallpaper')next.wallpaper.mediaId=id;else if(arg==='audio'){const family=next.presets.find(p=>p.id===next.selectedPreset)?.family||'focus';next.splash.themeAudioIds={...next.splash.themeAudioIds,[family]:id};}else next.splash.mediaId=id;return save(c,next);
+   const next=structuredClone(config);
+   if(arg==='startup-audio')next.rg.startupAudioId=id;
+   else if(arg==='end-audio')next.rg.endAudioId=id;
+   else if(arg==='wallpaper'||arg==='wallpaper-image'||arg==='wallpaper-video'){
+     if(['mp4','webm'].includes(ext)){next.wallpaper.videoMediaId=id;next.wallpaper.mode='video';}
+     else{next.wallpaper.imageMediaId=id;next.wallpaper.mediaId=id;next.wallpaper.mode='image';}
+   }else if(arg==='audio'){const family=next.presets.find(p=>p.id===next.selectedPreset)?.family||'focus';next.splash.themeAudioIds={...next.splash.themeAudioIds,[family]:id};}
+   else next.splash.mediaId=id;
+   return save(c,next);
   }
   case'export-preset':{const bundle=exportPreset(config),result=await dialog.showSaveDialog({defaultPath:`${bundle.preset.id}.agc.json`,filters:[{name:'Preset',extensions:['json']}]});if(result.canceled)return false;await fs.writeFile(result.filePath,JSON.stringify(bundle,null,2));return true;}
   case'import-preset':{const result=await dialog.showOpenDialog({properties:['openFile'],filters:[{name:'Preset',extensions:['json']}]});if(result.canceled)return null;const file=result.filePaths[0];if((await fs.stat(file)).size>128*1024)throw new Error('Preset vượt quá 128 KB.');return save(c,importPreset(config,JSON.parse(await fs.readFile(file,'utf8')),`custom-${randomUUID()}`));}
