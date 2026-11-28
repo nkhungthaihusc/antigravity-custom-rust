@@ -668,6 +668,7 @@ function installAntigravityCustom(data) {
     e.stopPropagation();
     refreshBtn.classList.add('agc-spinning');
     scanQuota();
+    silentSyncGeminiQuota();
     updateTelemetryUI(true);
     command({ type: 'quota-refresh' });
     setTimeout(() => refreshBtn.classList.remove('agc-spinning'), 600);
@@ -943,10 +944,10 @@ function installAntigravityCustom(data) {
     if (/\bReady\b/i.test(snippet)) return null;
     const now = Math.floor(Date.now() / 1000);
     let total = 0;
-    const d = snippet.match(/(\d+)\s*d/i);
-    const h = snippet.match(/(\d+)\s*h/i);
-    const m = snippet.match(/(\d+)\s*m(?!s)/i);
-    const s = snippet.match(/(\d+)\s*s/i);
+    const d = snippet.match(/(\d+)\s*(?:days?|d)\b/i);
+    const h = snippet.match(/(\d+)\s*(?:hours?|hrs?|h)\b/i);
+    const m = snippet.match(/(\d+)\s*(?:minutes?|mins?|m(?!s))\b/i);
+    const s = snippet.match(/(\d+)\s*(?:seconds?|secs?|s)\b/i);
     if (d) total += parseInt(d[1], 10) * 86400;
     if (h) total += parseInt(h[1], 10) * 3600;
     if (m) total += parseInt(m[1], 10) * 60;
@@ -966,50 +967,46 @@ function installAntigravityCustom(data) {
       }
 
       // Scan outside our own card for real Gemini quota percentages & reset timers when Settings / Quota panel is open
-      const candidates = document.querySelectorAll('[role="dialog"], [data-testid*="settings"], [data-testid*="quota"], [class*="quota"], [class*="models"], [class*="account"]');
+      const candidates = document.querySelectorAll('[role="dialog"], [data-testid*="settings"], [data-testid*="quota"], [class*="quota"], [class*="models"], [class*="account"], main');
       for (const el of candidates) {
         if (card.contains(el)) continue;
         const text = el.innerText || '';
-        const gemIdx = text.search(/Gemini/i);
+        const gemIdx = text.search(/Gemini\s+Models|Gemini/i);
         if (gemIdx === -1) continue;
 
-        const block = text.slice(gemIdx, gemIdx + 420);
+        const block = text.slice(gemIdx, gemIdx + 800);
         // Stop before Claude / GPT section if present
         const cutIdx = block.search(/Claude|GPT/i);
         const gemBlock = cutIdx > 0 ? block.slice(0, cutIdx) : block;
 
         let g5h = null, gWk = null, g5hReset = null, gWkReset = null;
 
-        const m5h = gemBlock.match(/(?:5h|hourly|session)[^\d%]{0,40}([^%\n]{0,30})?(\d{1,3})%/i)
-          || gemBlock.match(/(\d{1,3})%[^\n]{0,40}(?:5h|hourly|resets|refreshes)/i);
-        if (m5h) {
-          const pctStr = m5h[2] !== undefined ? m5h[2] : m5h[1];
-          const val = parseInt(pctStr, 10);
-          if (!Number.isNaN(val) && val <= 100) {
-            g5h = val;
-            g5hReset = parseResetDurationSec(m5h[0]);
-          }
-        }
-
-        const mWk = gemBlock.match(/(?:Weekly|week)[^\d%]{0,40}([^%\n]{0,30})?(\d{1,3})%/i)
-          || gemBlock.match(/(\d{1,3})%[^\n]{0,40}(?:Weekly|week)/i);
+        const mWk = gemBlock.match(/(?:Weekly\s+Limit\s+Remaining|Weekly)[\s\S]{0,240}?(\d{1,3})\s*%/i);
         if (mWk) {
-          const pctStr = mWk[2] !== undefined ? mWk[2] : mWk[1];
-          const val = parseInt(pctStr, 10);
+          const val = parseInt(mWk[1], 10);
           if (!Number.isNaN(val) && val <= 100) {
             gWk = val;
             gWkReset = parseResetDurationSec(mWk[0]);
           }
         }
 
-        // Single-percentage fallback (e.g. "Gemini 83%" or "Gemini Pro ... 83%")
+        const m5h = gemBlock.match(/(?:Five\s+Hour\s+Limit\s+Remaining|5-hour\s+limit|5h|hourly|session)[\s\S]{0,240}?(\d{1,3})\s*%/i);
+        if (m5h) {
+          const val = parseInt(m5h[1], 10);
+          if (!Number.isNaN(val) && val <= 100) {
+            g5h = val;
+            g5hReset = parseResetDurationSec(m5h[0]);
+          }
+        }
+
+        // Single-percentage fallback (e.g. "Gemini 83%")
         if (g5h === null && gWk === null) {
-          const single = gemBlock.match(/Gemini[^%]{0,80}?(\d{1,3})%/i);
+          const single = gemBlock.match(/Gemini[^%]{0,80}?(\d{1,3})\s*%/i);
           if (single) {
             const val = parseInt(single[1], 10);
             if (!Number.isNaN(val) && val <= 100) {
               g5h = val;
-              g5hReset = parseResetDurationSec(gemBlock.slice(0, 120));
+              g5hReset = parseResetDurationSec(gemBlock.slice(0, 140));
             }
           }
         }
@@ -1028,11 +1025,84 @@ function installAntigravityCustom(data) {
             updateQuotaUI(patch);
             command({ type: 'quota-update', quota: patch });
           }
-          break;
+          attachSidebarCard();
+          return true;
         }
       }
     } catch {}
     attachSidebarCard();
+    return false;
+  }
+
+  let silentSyncing = false;
+  function silentSyncGeminiQuota() {
+    if (destroyed || silentSyncing || active) return;
+    // If Settings is already open by the user, just scan directly without touching it
+    if (document.querySelector('[role="dialog"][aria-label="Settings"]')) {
+      scanQuota();
+      return;
+    }
+    const settingsBtn = findSettingsAnchor() || document.querySelector('[aria-label="Settings"]');
+    if (!settingsBtn) return;
+
+    silentSyncing = true;
+    const prevFocus = document.activeElement;
+    document.querySelector('#agc-stealth-settings-sync')?.remove();
+    const stealth = document.createElement('style');
+    stealth.id = 'agc-stealth-settings-sync';
+    stealth.textContent = `
+      [role="dialog"][aria-label="Settings"],
+      div:has(> [role="dialog"][aria-label="Settings"]) {
+        opacity: 0 !important;
+        pointer-events: none !important;
+        transition: none !important;
+        animation: none !important;
+      }
+    `;
+    document.head.append(stealth);
+
+    let clickedModels = false;
+    let finished = false;
+    const finishSync = () => {
+      if (finished) return;
+      finished = true;
+      clearInterval(poller);
+      const dlg = document.querySelector('[role="dialog"][aria-label="Settings"]');
+      if (dlg) {
+        const closeBtn = dlg.querySelector('button[aria-label="Close"], [data-testid*="close"]');
+        if (closeBtn) closeBtn.click();
+        else {
+          dlg.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+        }
+      }
+      setTimeout(() => {
+        stealth.remove();
+        if (prevFocus && typeof prevFocus.focus === 'function' && prevFocus.isConnected) {
+          try { prevFocus.focus({ preventScroll: true }); } catch {}
+        }
+        silentSyncing = false;
+      }, 60);
+    };
+
+    settingsBtn.click();
+    const startedAt = Date.now();
+    const poller = setInterval(() => {
+      if (destroyed) { finishSync(); return; }
+      const dlg = document.querySelector('[role="dialog"][aria-label="Settings"]');
+      if (dlg && !clickedModels) {
+        const modelsNav = dlg.querySelector('[data-testid="settings-nav-item-Models"]')
+          || [...dlg.querySelectorAll('[data-testid^="settings-nav-item-"], button, [role="tab"]')]
+              .find(b => /^(Models|Model)$/i.test((b.textContent || '').trim()));
+        if (modelsNav) {
+          clickedModels = true;
+          modelsNav.click();
+        }
+      }
+      if (scanQuota() || Date.now() - startedAt > 1600) {
+        finishSync();
+      }
+    }, 80);
   }
 
   updateQuotaUI();
@@ -1045,6 +1115,15 @@ function installAntigravityCustom(data) {
   }, 1000);
   const quotaScanInterval = setInterval(scanQuota, 4000);
   scanQuota();
+
+  // One-time silent sync on startup if Gemini quota has not been captured yet
+  if (quotaData.gemini5h === null && quotaData.geminiWeek === null) {
+    setTimeout(() => {
+      if (!destroyed && quotaData.gemini5h === null && quotaData.geminiWeek === null) {
+        silentSyncGeminiQuota();
+      }
+    }, 1500);
+  }
 
   // 10. Custom Settings Tab Integration
   function restoreContent() {
@@ -1143,6 +1222,7 @@ function installAntigravityCustom(data) {
     if (modal && !modal.isConnected) detach();
     const sidebar = document.querySelector('[role="dialog"][aria-label="Settings"] [data-testid="settings-sidebar"]');
     if (!sidebar) return;
+    scanQuota();
     const found = sidebar.closest('[role="dialog"]');
     if (modal && found !== modal) detach();
     if (!tab?.isConnected) {
@@ -1195,6 +1275,7 @@ function installAntigravityCustom(data) {
 
   const cleanup = () => {
     destroyed = true;
+    document.querySelector('#agc-stealth-settings-sync')?.remove();
     clearInterval(quotaScanInterval);
     clearInterval(liveTicker);
     observer.disconnect();
